@@ -13,14 +13,21 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const nav = [
+type NavItem = {
+  to: string;
+  label: string;
+  icon: typeof LayoutDashboard;
+  exact?: boolean;
+};
+
+const nav: NavItem[] = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, exact: true },
   { to: "/explorer", label: "Stock Explorer", icon: Compass },
   { to: "/portfolio", label: "Portfolio", icon: Briefcase },
   { to: "/journal", label: "Trading Journal", icon: BookOpen },
   { to: "/coach", label: "AI Coach", icon: Bot },
   { to: "/analytics", label: "Behavioral", icon: Brain },
-] as const;
+];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
