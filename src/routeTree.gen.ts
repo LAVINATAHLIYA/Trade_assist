@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as PortfolioRouteImport } from './routes/portfolio'
+import { Route as JournalRouteImport } from './routes/journal'
 import { Route as ExplorerRouteImport } from './routes/explorer'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as StockSymbolRouteImport } from './routes/stock.$symbol'
@@ -17,6 +18,11 @@ import { Route as StockSymbolRouteImport } from './routes/stock.$symbol'
 const PortfolioRoute = PortfolioRouteImport.update({
   id: '/portfolio',
   path: '/portfolio',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const JournalRoute = JournalRouteImport.update({
+  id: '/journal',
+  path: '/journal',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ExplorerRoute = ExplorerRouteImport.update({
@@ -38,12 +44,14 @@ const StockSymbolRoute = StockSymbolRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/explorer': typeof ExplorerRoute
+  '/journal': typeof JournalRoute
   '/portfolio': typeof PortfolioRoute
   '/stock/$symbol': typeof StockSymbolRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/explorer': typeof ExplorerRoute
+  '/journal': typeof JournalRoute
   '/portfolio': typeof PortfolioRoute
   '/stock/$symbol': typeof StockSymbolRoute
 }
@@ -51,20 +59,28 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/explorer': typeof ExplorerRoute
+  '/journal': typeof JournalRoute
   '/portfolio': typeof PortfolioRoute
   '/stock/$symbol': typeof StockSymbolRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/explorer' | '/portfolio' | '/stock/$symbol'
+  fullPaths: '/' | '/explorer' | '/journal' | '/portfolio' | '/stock/$symbol'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/explorer' | '/portfolio' | '/stock/$symbol'
-  id: '__root__' | '/' | '/explorer' | '/portfolio' | '/stock/$symbol'
+  to: '/' | '/explorer' | '/journal' | '/portfolio' | '/stock/$symbol'
+  id:
+    | '__root__'
+    | '/'
+    | '/explorer'
+    | '/journal'
+    | '/portfolio'
+    | '/stock/$symbol'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ExplorerRoute: typeof ExplorerRoute
+  JournalRoute: typeof JournalRoute
   PortfolioRoute: typeof PortfolioRoute
   StockSymbolRoute: typeof StockSymbolRoute
 }
@@ -76,6 +92,13 @@ declare module '@tanstack/react-router' {
       path: '/portfolio'
       fullPath: '/portfolio'
       preLoaderRoute: typeof PortfolioRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/journal': {
+      id: '/journal'
+      path: '/journal'
+      fullPath: '/journal'
+      preLoaderRoute: typeof JournalRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/explorer': {
@@ -105,6 +128,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ExplorerRoute: ExplorerRoute,
+  JournalRoute: JournalRoute,
   PortfolioRoute: PortfolioRoute,
   StockSymbolRoute: StockSymbolRoute,
 }
