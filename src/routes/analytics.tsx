@@ -64,11 +64,7 @@ function Analytics() {
                   <XAxis dataKey="m" tick={{ fill: "oklch(0.68 0.02 240)", fontSize: 11 }} axisLine={false} tickLine={false} />
                   <YAxis tick={{ fill: "oklch(0.68 0.02 240)", fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}K`} />
                   <Tooltip contentStyle={{ background: "oklch(0.2 0.014 240)", border: "1px solid oklch(0.3 0.015 240 / 0.6)", borderRadius: 12, fontSize: 12 }} />
-                  <Bar dataKey="pnl" radius={[8, 8, 0, 0]}>
-                    {monthlyPnl.map((d, i) => (
-                      <cell key={i} />
-                    ))}
-                  </Bar>
+                  <Bar dataKey="pnl" radius={[8, 8, 0, 0]} fill="oklch(0.74 0.17 155)" />
                 </BarChart>
               </ResponsiveContainer>
             </div>
