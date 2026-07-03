@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as PortfolioRouteImport } from './routes/portfolio'
 import { Route as JournalRouteImport } from './routes/journal'
 import { Route as ExplorerRouteImport } from './routes/explorer'
+import { Route as CoachRouteImport } from './routes/coach'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as StockSymbolRouteImport } from './routes/stock.$symbol'
 
@@ -30,6 +31,11 @@ const ExplorerRoute = ExplorerRouteImport.update({
   path: '/explorer',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CoachRoute = CoachRouteImport.update({
+  id: '/coach',
+  path: '/coach',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -43,6 +49,7 @@ const StockSymbolRoute = StockSymbolRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/coach': typeof CoachRoute
   '/explorer': typeof ExplorerRoute
   '/journal': typeof JournalRoute
   '/portfolio': typeof PortfolioRoute
@@ -50,6 +57,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/coach': typeof CoachRoute
   '/explorer': typeof ExplorerRoute
   '/journal': typeof JournalRoute
   '/portfolio': typeof PortfolioRoute
@@ -58,6 +66,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/coach': typeof CoachRoute
   '/explorer': typeof ExplorerRoute
   '/journal': typeof JournalRoute
   '/portfolio': typeof PortfolioRoute
@@ -65,12 +74,25 @@ export interface FileRoutesById {
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/explorer' | '/journal' | '/portfolio' | '/stock/$symbol'
+  fullPaths:
+    | '/'
+    | '/coach'
+    | '/explorer'
+    | '/journal'
+    | '/portfolio'
+    | '/stock/$symbol'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/explorer' | '/journal' | '/portfolio' | '/stock/$symbol'
+  to:
+    | '/'
+    | '/coach'
+    | '/explorer'
+    | '/journal'
+    | '/portfolio'
+    | '/stock/$symbol'
   id:
     | '__root__'
     | '/'
+    | '/coach'
     | '/explorer'
     | '/journal'
     | '/portfolio'
@@ -79,6 +101,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  CoachRoute: typeof CoachRoute
   ExplorerRoute: typeof ExplorerRoute
   JournalRoute: typeof JournalRoute
   PortfolioRoute: typeof PortfolioRoute
@@ -108,6 +131,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ExplorerRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/coach': {
+      id: '/coach'
+      path: '/coach'
+      fullPath: '/coach'
+      preLoaderRoute: typeof CoachRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -127,6 +157,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  CoachRoute: CoachRoute,
   ExplorerRoute: ExplorerRoute,
   JournalRoute: JournalRoute,
   PortfolioRoute: PortfolioRoute,
