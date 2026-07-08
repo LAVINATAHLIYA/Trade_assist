@@ -1,8 +1,10 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { AppShell } from "@/components/app-shell";
 import { stocks, sectors } from "@/lib/mock-data";
 import { Delta, SectionHeader, formatINR } from "@/lib/ui-helpers";
+import { quotesQuery, toTdStock } from "@/lib/market-queries";
 import { Search, LayoutGrid, Table as TableIcon, Bookmark, SlidersHorizontal, Star } from "lucide-react";
 import { cn } from "@/lib/utils";
 
