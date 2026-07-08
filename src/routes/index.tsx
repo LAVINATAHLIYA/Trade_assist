@@ -83,23 +83,28 @@ function Dashboard() {
 
         {/* Market Overview Cards */}
         <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
-          {indices.map((idx) => (
-            <div key={idx.symbol} className="glass rounded-2xl p-4 transition-all hover:-translate-y-0.5">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                  {idx.symbol}
-                </span>
-                <Delta value={idx.changePct} className="text-[11px]" />
+          {indices.map((idx) => {
+            const live = idxMap.get(INDEX_SYMBOL_MAP[idx.symbol]);
+            const price = live?.price ?? idx.price;
+            const changePct = live?.changePct ?? idx.changePct;
+            return (
+              <div key={idx.symbol} className="glass rounded-2xl p-4 transition-all hover:-translate-y-0.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    {idx.symbol}
+                  </span>
+                  <Delta value={changePct} className="text-[11px]" />
+                </div>
+                <div className="mt-2 text-lg font-semibold num tracking-tight">
+                  {price.toLocaleString("en-IN", { maximumFractionDigits: 2 })}
+                </div>
+                <div className="text-[10px] text-muted-foreground">{idx.name}</div>
+                <div className="mt-2">
+                  <Sparkline data={idx.spark} positive={changePct >= 0} />
+                </div>
               </div>
-              <div className="mt-2 text-lg font-semibold num tracking-tight">
-                {idx.price.toLocaleString("en-IN", { maximumFractionDigits: 2 })}
-              </div>
-              <div className="text-[10px] text-muted-foreground">{idx.name}</div>
-              <div className="mt-2">
-                <Sparkline data={idx.spark} positive={idx.changePct >= 0} />
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         <div className="grid grid-cols-12 gap-6">
