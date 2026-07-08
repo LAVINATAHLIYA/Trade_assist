@@ -1,8 +1,10 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
 import { AppShell } from "@/components/app-shell";
 import { indices, stocks, sectors, earnings, aiInsights, holdings } from "@/lib/mock-data";
 import { Delta, KpiCard, SectionHeader, Sparkline, formatINR, formatPct } from "@/lib/ui-helpers";
-import { Sparkles, TrendingUp, TrendingDown, Calendar, Wallet, ChevronRight, Activity } from "lucide-react";
+import { INDEX_SYMBOL_MAP, quotesQuery, toTdStock } from "@/lib/market-queries";
+import { Sparkles, TrendingUp, TrendingDown, Calendar, Wallet, ChevronRight, Activity, Wifi, WifiOff } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/")({
@@ -16,14 +18,31 @@ export const Route = createFileRoute("/")({
 });
 
 function Dashboard() {
-  const gainers = [...stocks].sort((a, b) => b.changePct - a.changePct).slice(0, 5);
-  const losers = [...stocks].sort((a, b) => a.changePct - b.changePct).slice(0, 5);
-  const watchlist = stocks.slice(0, 6);
+  // Live index quotes
+  const indexSymbols = indices.map((i) => INDEX_SYMBOL_MAP[i.symbol]).filter(Boolean);
+  const idxQ = useQuery(quotesQuery(indexSymbols));
+  const idxMap = new Map((idxQ.data?.quotes ?? []).map((q) => [q.symbol, q]));
+
+  // Live stock quotes (used across heatmap / movers / watchlist)
+  const stockSymbols = stocks.map((s) => toTdStock(s.symbol));
+  const stkQ = useQuery(quotesQuery(stockSymbols));
+  const stkMap = new Map((stkQ.data?.quotes ?? []).map((q) => [q.symbol, q]));
+
+  const liveStocks = stocks.map((s) => {
+    const q = stkMap.get(toTdStock(s.symbol));
+    return q ? { ...s, price: q.price, change: q.change, changePct: q.changePct } : s;
+  });
+
+  const gainers = [...liveStocks].sort((a, b) => b.changePct - a.changePct).slice(0, 5);
+  const losers = [...liveStocks].sort((a, b) => a.changePct - b.changePct).slice(0, 5);
+  const watchlist = liveStocks.slice(0, 6);
 
   const portfolioValue = holdings.reduce((s, h) => s + h.qty * h.ltp, 0);
   const portfolioCost = holdings.reduce((s, h) => s + h.qty * h.avg, 0);
   const pnl = portfolioValue - portfolioCost;
   const pnlPct = (pnl / portfolioCost) * 100;
+
+  const isLive = (idxQ.data?.quotes?.length ?? 0) > 0 || (stkQ.data?.quotes?.length ?? 0) > 0;
 
   return (
     <AppShell>
@@ -35,7 +54,19 @@ function Dashboard() {
             <h1 className="text-2xl font-semibold tracking-tight mt-1">
               Good morning, Arjun <span className="text-gradient-emerald">.</span>
             </h1>
-            <p className="text-sm text-muted-foreground mt-1">
+            <p className="text-sm text-muted-foreground mt-1 flex items-center gap-2">
+              <span
+                className={cn(
+                  "inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider border",
+                  isLive
+                    ? "bg-success/10 text-success border-success/30"
+                    : "bg-muted/40 text-muted-foreground border-border",
+                )}
+                title={isLive ? "Twelve Data · live" : "Live data unavailable, showing sample"}
+              >
+                {isLive ? <Wifi className="h-3 w-3" /> : <WifiOff className="h-3 w-3" />}
+                {isLive ? "Live" : "Sample"}
+              </span>
               Markets are up. Your portfolio is <span className="text-success font-medium">+2.14%</span> today.
             </p>
           </div>
@@ -52,23 +83,28 @@ function Dashboard() {
 
         {/* Market Overview Cards */}
         <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
-          {indices.map((idx) => (
-            <div key={idx.symbol} className="glass rounded-2xl p-4 transition-all hover:-translate-y-0.5">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                  {idx.symbol}
-                </span>
-                <Delta value={idx.changePct} className="text-[11px]" />
+          {indices.map((idx) => {
+            const live = idxMap.get(INDEX_SYMBOL_MAP[idx.symbol]);
+            const price = live?.price ?? idx.price;
+            const changePct = live?.changePct ?? idx.changePct;
+            return (
+              <div key={idx.symbol} className="glass rounded-2xl p-4 transition-all hover:-translate-y-0.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    {idx.symbol}
+                  </span>
+                  <Delta value={changePct} className="text-[11px]" />
+                </div>
+                <div className="mt-2 text-lg font-semibold num tracking-tight">
+                  {price.toLocaleString("en-IN", { maximumFractionDigits: 2 })}
+                </div>
+                <div className="text-[10px] text-muted-foreground">{idx.name}</div>
+                <div className="mt-2">
+                  <Sparkline data={idx.spark} positive={changePct >= 0} />
+                </div>
               </div>
-              <div className="mt-2 text-lg font-semibold num tracking-tight">
-                {idx.price.toLocaleString("en-IN", { maximumFractionDigits: 2 })}
-              </div>
-              <div className="text-[10px] text-muted-foreground">{idx.name}</div>
-              <div className="mt-2">
-                <Sparkline data={idx.spark} positive={idx.changePct >= 0} />
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         <div className="grid grid-cols-12 gap-6">
@@ -98,7 +134,7 @@ function Dashboard() {
                 }
               />
               <div className="grid grid-cols-6 md:grid-cols-8 gap-1.5">
-                {stocks.slice(0, 20).map((s) => {
+                {liveStocks.slice(0, 20).map((s) => {
                   const intensity = Math.min(Math.abs(s.changePct) / 3, 1);
                   const positive = s.changePct >= 0;
                   const bg = positive

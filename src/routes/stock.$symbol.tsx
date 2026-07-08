@@ -1,12 +1,14 @@
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { AppShell } from "@/components/app-shell";
 import { stocks } from "@/lib/mock-data";
 import { Delta, KpiCard, SectionHeader, formatINR, formatPct } from "@/lib/ui-helpers";
+import { quotesQuery, timeSeriesQuery, toTdStock } from "@/lib/market-queries";
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar, RadialBarChart, RadialBar, PolarAngleAxis,
 } from "recharts";
-import { Bookmark, Bell, Share2, TrendingUp, TrendingDown, Zap, Shield, Brain, Activity } from "lucide-react";
+import { Bookmark, Bell, Share2, TrendingUp, TrendingDown, Zap, Shield, Brain, Activity, Wifi, WifiOff } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/stock/$symbol")({
@@ -32,22 +34,55 @@ const TABS = [
 ] as const;
 type Tab = typeof TABS[number];
 
+const RANGE_TO_QUERY: Record<string, { interval: string; outputsize: number }> = {
+  "1D": { interval: "5min", outputsize: 78 },
+  "1W": { interval: "30min", outputsize: 60 },
+  "1M": { interval: "1day", outputsize: 22 },
+  "3M": { interval: "1day", outputsize: 66 },
+  "1Y": { interval: "1day", outputsize: 252 },
+  "5Y": { interval: "1week", outputsize: 260 },
+  MAX: { interval: "1month", outputsize: 240 },
+};
+
 function StockDetail() {
-  const { stock } = Route.useLoaderData();
+  const { stock: base } = Route.useLoaderData();
   const [tab, setTab] = useState<Tab>("Overview");
   const [range, setRange] = useState("1Y");
+  const tdSymbol = toTdStock(base.symbol);
+
+  // Live quote
+  const quoteQ = useQuery(quotesQuery([tdSymbol]));
+  const live = quoteQ.data?.quotes?.[0];
+  const stock = live
+    ? { ...base, price: live.price, change: live.change, changePct: live.changePct }
+    : base;
+  const isLive = Boolean(live);
+
+  // Live time series
+  const { interval, outputsize } = RANGE_TO_QUERY[range] ?? RANGE_TO_QUERY["1Y"];
+  const seriesQ = useQuery(timeSeriesQuery(tdSymbol, interval, outputsize));
 
   const chartData = useMemo(() => {
-    const n = 120;
-    const arr = [];
+    const bars = seriesQ.data?.bars ?? [];
+    if (bars.length > 0) {
+      return bars.map((b, i) => ({ i, price: b.close, volume: b.volume, t: b.t }));
+    }
+    // Fallback synthetic series (SSR-stable seed based on price + range)
+    const n = outputsize;
+    const arr: Array<{ i: number; price: number; volume: number }> = [];
     let v = stock.price * 0.75;
+    let seed = Math.abs(Math.floor(stock.price * 1000)) + n;
+    const rand = () => {
+      seed = (seed * 9301 + 49297) % 233280;
+      return seed / 233280;
+    };
     for (let i = 0; i < n; i++) {
-      v = v * (1 + (Math.sin(i * 0.15) * 0.02 + (Math.random() - 0.48) * 0.02));
-      arr.push({ i, price: +v.toFixed(2), volume: Math.round(50 + Math.random() * 250) });
+      v = v * (1 + (Math.sin(i * 0.15) * 0.02 + (rand() - 0.48) * 0.02));
+      arr.push({ i, price: +v.toFixed(2), volume: Math.round(50 + rand() * 250) });
     }
     arr[n - 1].price = stock.price;
     return arr;
-  }, [stock]);
+  }, [seriesQ.data, stock.price, outputsize]);
 
   return (
     <AppShell>
@@ -71,7 +106,18 @@ function StockDetail() {
                   <span>·</span>
                   <span>Large cap</span>
                   <span>·</span>
-                  <span className="text-success">● Active</span>
+                  <span
+                    className={cn(
+                      "inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-semibold uppercase tracking-wider border text-[10px]",
+                      isLive
+                        ? "bg-success/10 text-success border-success/30"
+                        : "bg-muted/40 text-muted-foreground border-border",
+                    )}
+                    title={isLive ? "Twelve Data · live" : "Live data unavailable"}
+                  >
+                    {isLive ? <Wifi className="h-2.5 w-2.5" /> : <WifiOff className="h-2.5 w-2.5" />}
+                    {isLive ? "Live" : "Sample"}
+                  </span>
                 </div>
               </div>
             </div>
