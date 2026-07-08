@@ -106,7 +106,18 @@ function StockDetail() {
                   <span>·</span>
                   <span>Large cap</span>
                   <span>·</span>
-                  <span className="text-success">● Active</span>
+                  <span
+                    className={cn(
+                      "inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-semibold uppercase tracking-wider border text-[10px]",
+                      isLive
+                        ? "bg-success/10 text-success border-success/30"
+                        : "bg-muted/40 text-muted-foreground border-border",
+                    )}
+                    title={isLive ? "Twelve Data · live" : "Live data unavailable"}
+                  >
+                    {isLive ? <Wifi className="h-2.5 w-2.5" /> : <WifiOff className="h-2.5 w-2.5" />}
+                    {isLive ? "Live" : "Sample"}
+                  </span>
                 </div>
               </div>
             </div>
