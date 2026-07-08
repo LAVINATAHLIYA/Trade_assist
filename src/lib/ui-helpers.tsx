@@ -95,7 +95,7 @@ export function Sparkline({ data, positive = true, className }: { data: number[]
   const step = w / (data.length - 1);
   const points = data.map((d, i) => `${i * step},${h - ((d - min) / range) * h}`).join(" ");
   const color = positive ? "oklch(0.74 0.17 155)" : "oklch(0.65 0.22 22)";
-  const id = `spark-${Math.random().toString(36).slice(2)}`;
+  const id = `spark-${useId().replace(/[:]/g, "")}`;
   return (
     <svg viewBox={`0 0 ${w} ${h}`} className={cn("w-full h-7", className)} preserveAspectRatio="none">
       <defs>
