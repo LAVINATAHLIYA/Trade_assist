@@ -48,8 +48,19 @@ function Explorer() {
     sector: "All",
   });
 
+  const stkQ = useQuery(quotesQuery(stocks.map((s) => toTdStock(s.symbol))));
+  const liveMap = new Map((stkQ.data?.quotes ?? []).map((q) => [q.symbol, q]));
+  const liveStocks = useMemo(
+    () =>
+      stocks.map((s) => {
+        const q = liveMap.get(toTdStock(s.symbol));
+        return q ? { ...s, price: q.price, change: q.change, changePct: q.changePct } : s;
+      }),
+    [stkQ.data],
+  );
+
   const results = useMemo(() => {
-    return stocks.filter((s) => {
+    return liveStocks.filter((s) => {
       if (q && !`${s.symbol} ${s.name}`.toLowerCase().includes(q.toLowerCase())) return false;
       if (s.pe < filters.peMin || s.pe > filters.peMax) return false;
       if (s.roe < filters.roeMin) return false;
@@ -59,7 +70,7 @@ function Explorer() {
       if (filters.sector !== "All" && s.sector !== filters.sector) return false;
       return true;
     });
-  }, [q, filters]);
+  }, [q, filters, liveStocks]);
 
   return (
     <AppShell>
