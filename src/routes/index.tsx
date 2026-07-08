@@ -134,7 +134,7 @@ function Dashboard() {
                 }
               />
               <div className="grid grid-cols-6 md:grid-cols-8 gap-1.5">
-                {stocks.slice(0, 20).map((s) => {
+                {liveStocks.slice(0, 20).map((s) => {
                   const intensity = Math.min(Math.abs(s.changePct) / 3, 1);
                   const positive = s.changePct >= 0;
                   const bg = positive
