@@ -1,8 +1,10 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
 import { AppShell } from "@/components/app-shell";
 import { indices, stocks, sectors, earnings, aiInsights, holdings } from "@/lib/mock-data";
 import { Delta, KpiCard, SectionHeader, Sparkline, formatINR, formatPct } from "@/lib/ui-helpers";
-import { Sparkles, TrendingUp, TrendingDown, Calendar, Wallet, ChevronRight, Activity } from "lucide-react";
+import { INDEX_SYMBOL_MAP, quotesQuery, toTdStock } from "@/lib/market-queries";
+import { Sparkles, TrendingUp, TrendingDown, Calendar, Wallet, ChevronRight, Activity, Wifi, WifiOff } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/")({
@@ -16,14 +18,31 @@ export const Route = createFileRoute("/")({
 });
 
 function Dashboard() {
-  const gainers = [...stocks].sort((a, b) => b.changePct - a.changePct).slice(0, 5);
-  const losers = [...stocks].sort((a, b) => a.changePct - b.changePct).slice(0, 5);
-  const watchlist = stocks.slice(0, 6);
+  // Live index quotes
+  const indexSymbols = indices.map((i) => INDEX_SYMBOL_MAP[i.symbol]).filter(Boolean);
+  const idxQ = useQuery(quotesQuery(indexSymbols));
+  const idxMap = new Map((idxQ.data?.quotes ?? []).map((q) => [q.symbol, q]));
+
+  // Live stock quotes (used across heatmap / movers / watchlist)
+  const stockSymbols = stocks.map((s) => toTdStock(s.symbol));
+  const stkQ = useQuery(quotesQuery(stockSymbols));
+  const stkMap = new Map((stkQ.data?.quotes ?? []).map((q) => [q.symbol, q]));
+
+  const liveStocks = stocks.map((s) => {
+    const q = stkMap.get(toTdStock(s.symbol));
+    return q ? { ...s, price: q.price, change: q.change, changePct: q.changePct } : s;
+  });
+
+  const gainers = [...liveStocks].sort((a, b) => b.changePct - a.changePct).slice(0, 5);
+  const losers = [...liveStocks].sort((a, b) => a.changePct - b.changePct).slice(0, 5);
+  const watchlist = liveStocks.slice(0, 6);
 
   const portfolioValue = holdings.reduce((s, h) => s + h.qty * h.ltp, 0);
   const portfolioCost = holdings.reduce((s, h) => s + h.qty * h.avg, 0);
   const pnl = portfolioValue - portfolioCost;
   const pnlPct = (pnl / portfolioCost) * 100;
+
+  const isLive = (idxQ.data?.quotes?.length ?? 0) > 0 || (stkQ.data?.quotes?.length ?? 0) > 0;
 
   return (
     <AppShell>
