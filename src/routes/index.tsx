@@ -54,7 +54,19 @@ function Dashboard() {
             <h1 className="text-2xl font-semibold tracking-tight mt-1">
               Good morning, Arjun <span className="text-gradient-emerald">.</span>
             </h1>
-            <p className="text-sm text-muted-foreground mt-1">
+            <p className="text-sm text-muted-foreground mt-1 flex items-center gap-2">
+              <span
+                className={cn(
+                  "inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider border",
+                  isLive
+                    ? "bg-success/10 text-success border-success/30"
+                    : "bg-muted/40 text-muted-foreground border-border",
+                )}
+                title={isLive ? "Twelve Data · live" : "Live data unavailable, showing sample"}
+              >
+                {isLive ? <Wifi className="h-3 w-3" /> : <WifiOff className="h-3 w-3" />}
+                {isLive ? "Live" : "Sample"}
+              </span>
               Markets are up. Your portfolio is <span className="text-success font-medium">+2.14%</span> today.
             </p>
           </div>
