@@ -7,9 +7,11 @@ import { Delta, KpiCard, SectionHeader, formatINR, formatPct } from "@/lib/ui-he
 import { quotesQuery, timeSeriesQuery, toTdStock } from "@/lib/market-queries";
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar, RadialBarChart, RadialBar, PolarAngleAxis,
+  ComposedChart, Line, ReferenceLine,
 } from "recharts";
-import { Bookmark, Bell, Share2, TrendingUp, TrendingDown, Zap, Shield, Brain, Activity, Wifi, WifiOff } from "lucide-react";
+import { Bookmark, Bell, Share2, TrendingUp, TrendingDown, Zap, Shield, Brain, Activity, Wifi, WifiOff, LineChart as LineIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
+
 
 export const Route = createFileRoute("/stock/$symbol")({
   loader: ({ params }) => {
@@ -44,11 +46,82 @@ const RANGE_TO_QUERY: Record<string, { interval: string; outputsize: number }> =
   MAX: { interval: "1month", outputsize: 240 },
 };
 
+function sma(data: number[], period: number): (number | null)[] {
+  const out: (number | null)[] = [];
+  for (let i = 0; i < data.length; i++) {
+    if (i < period - 1) { out.push(null); continue; }
+    let sum = 0;
+    for (let j = i - period + 1; j <= i; j++) sum += data[j];
+    out.push(sum / period);
+  }
+  return out;
+}
+function ema(data: number[], period: number): (number | null)[] {
+  const out: (number | null)[] = [];
+  const k = 2 / (period + 1);
+  let prev: number | null = null;
+  for (let i = 0; i < data.length; i++) {
+    if (i < period - 1) { out.push(null); continue; }
+    if (prev === null) {
+      let sum = 0; for (let j = 0; j < period; j++) sum += data[j];
+      prev = sum / period;
+    } else prev = data[i] * k + prev * (1 - k);
+    out.push(prev);
+  }
+  return out;
+}
+function bollinger(data: number[], period = 20, mult = 2) {
+  const mid = sma(data, period);
+  const up: (number | null)[] = []; const lo: (number | null)[] = [];
+  for (let i = 0; i < data.length; i++) {
+    if (i < period - 1 || mid[i] === null) { up.push(null); lo.push(null); continue; }
+    let s = 0;
+    for (let j = i - period + 1; j <= i; j++) s += (data[j] - (mid[i] as number)) ** 2;
+    const sd = Math.sqrt(s / period);
+    up.push((mid[i] as number) + mult * sd);
+    lo.push((mid[i] as number) - mult * sd);
+  }
+  return { mid, up, lo };
+}
+function rsi(data: number[], period = 14): (number | null)[] {
+  const out: (number | null)[] = [null];
+  let gains = 0, losses = 0;
+  for (let i = 1; i < data.length; i++) {
+    const d = data[i] - data[i - 1];
+    if (i <= period) {
+      if (d > 0) gains += d; else losses -= d;
+      if (i === period) { const rs = gains / (losses || 1); out.push(100 - 100 / (1 + rs)); }
+      else out.push(null);
+    } else {
+      gains = (gains * (period - 1) + Math.max(d, 0)) / period;
+      losses = (losses * (period - 1) + Math.max(-d, 0)) / period;
+      const rs = gains / (losses || 1);
+      out.push(100 - 100 / (1 + rs));
+    }
+  }
+  return out;
+}
+function macd(data: number[], fast = 12, slow = 26, signal = 9) {
+  const e1 = ema(data, fast); const e2 = ema(data, slow);
+  const line = data.map((_, i) => (e1[i] !== null && e2[i] !== null) ? (e1[i] as number) - (e2[i] as number) : null);
+  const validVals = line.map((v) => v ?? 0);
+  const sig = ema(validVals, signal);
+  const hist = line.map((v, i) => (v !== null && sig[i] !== null) ? v - (sig[i] as number) : null);
+  return { line, sig, hist };
+}
+
+type IndicatorKey = "sma20" | "sma50" | "ema20" | "bb" | "rsi" | "macd";
+
 function StockDetail() {
   const { stock: base } = Route.useLoaderData();
   const [tab, setTab] = useState<Tab>("Overview");
   const [range, setRange] = useState("1Y");
+  const [inds, setInds] = useState<Set<IndicatorKey>>(new Set(["sma50", "bb"]));
   const tdSymbol = toTdStock(base.symbol);
+
+  const toggleInd = (k: IndicatorKey) => {
+    const n = new Set(inds); n.has(k) ? n.delete(k) : n.add(k); setInds(n);
+  };
 
   // Live quote
   const quoteQ = useQuery(quotesQuery([tdSymbol]));
@@ -64,25 +137,34 @@ function StockDetail() {
 
   const chartData = useMemo(() => {
     const bars = seriesQ.data?.bars ?? [];
+    let base: Array<{ i: number; price: number; volume: number; t?: string }> = [];
     if (bars.length > 0) {
-      return bars.map((b, i) => ({ i, price: b.close, volume: b.volume, t: b.t }));
+      base = bars.map((b, i) => ({ i, price: b.close, volume: b.volume, t: b.t }));
+    } else {
+      const n = outputsize;
+      let v = stock.price * 0.75;
+      let seed = Math.abs(Math.floor(stock.price * 1000)) + n;
+      const rand = () => { seed = (seed * 9301 + 49297) % 233280; return seed / 233280; };
+      for (let i = 0; i < n; i++) {
+        v = v * (1 + (Math.sin(i * 0.15) * 0.02 + (rand() - 0.48) * 0.02));
+        base.push({ i, price: +v.toFixed(2), volume: Math.round(50 + rand() * 250) });
+      }
+      base[n - 1].price = stock.price;
     }
-    // Fallback synthetic series (SSR-stable seed based on price + range)
-    const n = outputsize;
-    const arr: Array<{ i: number; price: number; volume: number }> = [];
-    let v = stock.price * 0.75;
-    let seed = Math.abs(Math.floor(stock.price * 1000)) + n;
-    const rand = () => {
-      seed = (seed * 9301 + 49297) % 233280;
-      return seed / 233280;
-    };
-    for (let i = 0; i < n; i++) {
-      v = v * (1 + (Math.sin(i * 0.15) * 0.02 + (rand() - 0.48) * 0.02));
-      arr.push({ i, price: +v.toFixed(2), volume: Math.round(50 + rand() * 250) });
-    }
-    arr[n - 1].price = stock.price;
-    return arr;
+    const closes = base.map((r) => r.price);
+    const s20 = sma(closes, 20); const s50 = sma(closes, 50);
+    const e20 = ema(closes, 20);
+    const bb = bollinger(closes, 20, 2);
+    const rs = rsi(closes, 14);
+    const mc = macd(closes);
+    return base.map((r, i) => ({
+      ...r,
+      sma20: s20[i], sma50: s50[i], ema20: e20[i],
+      bbUp: bb.up[i], bbLo: bb.lo[i], bbMid: bb.mid[i],
+      rsi: rs[i], macd: mc.line[i], macdSig: mc.sig[i], macdHist: mc.hist[i],
+    }));
   }, [seriesQ.data, stock.price, outputsize]);
+
 
   return (
     <AppShell>
