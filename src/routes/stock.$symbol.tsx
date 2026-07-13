@@ -231,59 +231,108 @@ function StockDetail() {
           </div>
         </div>
 
-        {/* Chart */}
+        {/* Pro chart with indicators */}
         <div className="glass rounded-2xl p-5">
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
             <div>
-              <h3 className="text-sm font-semibold">Price Chart</h3>
-              <p className="text-[11px] text-muted-foreground">TradingView-style · daily close</p>
+              <h3 className="text-sm font-semibold flex items-center gap-2">
+                <LineIcon className="h-4 w-4 text-primary" /> Price Chart
+              </h3>
+              <p className="text-[11px] text-muted-foreground">TradingView-style · SMA · EMA · Bollinger · RSI · MACD</p>
             </div>
             <div className="flex gap-1 text-[11px]">
               {["1D", "1W", "1M", "3M", "1Y", "5Y", "MAX"].map((r) => (
-                <button
-                  key={r}
-                  onClick={() => setRange(r)}
-                  className={cn(
-                    "px-2.5 py-1 rounded-md font-medium transition",
-                    r === range ? "bg-primary/15 text-primary border border-primary/20" : "text-muted-foreground hover:bg-muted/40",
-                  )}
-                >{r}</button>
+                <button key={r} onClick={() => setRange(r)}
+                  className={cn("px-2.5 py-1 rounded-md font-medium transition",
+                    r === range ? "bg-primary/15 text-primary border border-primary/20" : "text-muted-foreground hover:bg-muted/40")}>{r}</button>
               ))}
             </div>
           </div>
+
+          <div className="mb-3 flex flex-wrap gap-1.5 text-[10px]">
+            {([
+              ["sma20", "SMA 20", "oklch(0.78 0.14 65)"],
+              ["sma50", "SMA 50", "oklch(0.68 0.18 265)"],
+              ["ema20", "EMA 20", "oklch(0.82 0.16 82)"],
+              ["bb", "Bollinger", "oklch(0.62 0.05 240)"],
+              ["rsi", "RSI 14", "oklch(0.74 0.17 320)"],
+              ["macd", "MACD", "oklch(0.7 0.15 200)"],
+            ] as [IndicatorKey, string, string][]).map(([k, label, color]) => (
+              <button key={k} onClick={() => toggleInd(k)}
+                className={cn("px-2 py-1 rounded-md border flex items-center gap-1.5 font-medium transition",
+                  inds.has(k) ? "bg-muted/40 border-border" : "bg-transparent border-border/40 text-muted-foreground")}>
+                <span className="inline-block h-2 w-2 rounded-sm" style={{ background: color, opacity: inds.has(k) ? 1 : 0.3 }} />
+                {label}
+              </button>
+            ))}
+          </div>
+
           <div className="h-80">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={chartData}>
+              <ComposedChart data={chartData}>
                 <defs>
                   <linearGradient id="pxg" x1="0" x2="0" y1="0" y2="1">
-                    <stop offset="0%" stopColor="oklch(0.74 0.17 155)" stopOpacity={0.4} />
+                    <stop offset="0%" stopColor="oklch(0.74 0.17 155)" stopOpacity={0.35} />
                     <stop offset="100%" stopColor="oklch(0.74 0.17 155)" stopOpacity={0} />
                   </linearGradient>
                 </defs>
                 <XAxis dataKey="i" hide />
-                <YAxis domain={["dataMin - 50", "dataMax + 50"]} tick={{ fill: "oklch(0.68 0.02 240)", fontSize: 11 }} width={55} tickFormatter={(v) => v.toLocaleString("en-IN")} />
-                <Tooltip
-                  contentStyle={{
-                    background: "oklch(0.2 0.014 240)",
-                    border: "1px solid oklch(0.3 0.015 240 / 0.6)",
-                    borderRadius: 12,
-                    fontSize: 12,
-                  }}
-                />
-                <Area type="monotone" dataKey="price" stroke="oklch(0.74 0.17 155)" strokeWidth={2} fill="url(#pxg)" />
-              </AreaChart>
+                <YAxis domain={["dataMin - 20", "dataMax + 20"]} tick={{ fill: "oklch(0.68 0.02 240)", fontSize: 11 }} width={55} tickFormatter={(v) => v.toLocaleString("en-IN")} />
+                <Tooltip contentStyle={{ background: "oklch(0.2 0.014 240)", border: "1px solid oklch(0.3 0.015 240 / 0.6)", borderRadius: 12, fontSize: 12 }} />
+                <Area type="monotone" dataKey="price" stroke="oklch(0.74 0.17 155)" strokeWidth={2} fill="url(#pxg)" isAnimationActive={false} />
+                {inds.has("bb") && <Line type="monotone" dataKey="bbUp" stroke="oklch(0.62 0.05 240)" strokeWidth={1} dot={false} strokeDasharray="3 3" isAnimationActive={false} />}
+                {inds.has("bb") && <Line type="monotone" dataKey="bbLo" stroke="oklch(0.62 0.05 240)" strokeWidth={1} dot={false} strokeDasharray="3 3" isAnimationActive={false} />}
+                {inds.has("sma20") && <Line type="monotone" dataKey="sma20" stroke="oklch(0.78 0.14 65)" strokeWidth={1.4} dot={false} isAnimationActive={false} />}
+                {inds.has("sma50") && <Line type="monotone" dataKey="sma50" stroke="oklch(0.68 0.18 265)" strokeWidth={1.4} dot={false} isAnimationActive={false} />}
+                {inds.has("ema20") && <Line type="monotone" dataKey="ema20" stroke="oklch(0.82 0.16 82)" strokeWidth={1.2} dot={false} isAnimationActive={false} />}
+              </ComposedChart>
             </ResponsiveContainer>
           </div>
+
           <div className="h-24 mt-2">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={chartData}>
                 <XAxis dataKey="i" hide />
                 <YAxis hide />
-                <Bar dataKey="volume" fill="oklch(0.3 0.02 240)" />
+                <Bar dataKey="volume" fill="oklch(0.3 0.02 240)" isAnimationActive={false} />
               </BarChart>
             </ResponsiveContainer>
           </div>
+
+          {inds.has("rsi") && (
+            <div className="h-24 mt-3 border-t border-border/40 pt-2">
+              <div className="text-[10px] text-muted-foreground uppercase tracking-widest mb-1">RSI 14</div>
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart data={chartData}>
+                  <XAxis dataKey="i" hide />
+                  <YAxis domain={[0, 100]} width={30} tick={{ fill: "oklch(0.68 0.02 240)", fontSize: 10 }} />
+                  <Tooltip contentStyle={{ background: "oklch(0.2 0.014 240)", border: "1px solid oklch(0.3 0.015 240 / 0.6)", borderRadius: 8, fontSize: 11 }} />
+                  <ReferenceLine y={70} stroke="oklch(0.65 0.22 22)" strokeDasharray="2 3" strokeOpacity={0.4} />
+                  <ReferenceLine y={30} stroke="oklch(0.74 0.17 155)" strokeDasharray="2 3" strokeOpacity={0.4} />
+                  <Line type="monotone" dataKey="rsi" stroke="oklch(0.74 0.17 320)" strokeWidth={1.5} dot={false} isAnimationActive={false} />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+
+          {inds.has("macd") && (
+            <div className="h-28 mt-3 border-t border-border/40 pt-2">
+              <div className="text-[10px] text-muted-foreground uppercase tracking-widest mb-1">MACD 12·26·9</div>
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart data={chartData}>
+                  <XAxis dataKey="i" hide />
+                  <YAxis width={30} tick={{ fill: "oklch(0.68 0.02 240)", fontSize: 10 }} />
+                  <Tooltip contentStyle={{ background: "oklch(0.2 0.014 240)", border: "1px solid oklch(0.3 0.015 240 / 0.6)", borderRadius: 8, fontSize: 11 }} />
+                  <ReferenceLine y={0} stroke="oklch(0.5 0.02 240)" strokeOpacity={0.5} />
+                  <Bar dataKey="macdHist" fill="oklch(0.5 0.05 240)" isAnimationActive={false} />
+                  <Line type="monotone" dataKey="macd" stroke="oklch(0.7 0.15 200)" strokeWidth={1.4} dot={false} isAnimationActive={false} />
+                  <Line type="monotone" dataKey="macdSig" stroke="oklch(0.82 0.16 82)" strokeWidth={1.2} dot={false} isAnimationActive={false} />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+          )}
         </div>
+
 
         {/* KPI cards */}
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
