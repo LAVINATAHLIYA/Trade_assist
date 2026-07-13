@@ -7,9 +7,11 @@ import { Delta, KpiCard, SectionHeader, formatINR, formatPct } from "@/lib/ui-he
 import { quotesQuery, timeSeriesQuery, toTdStock } from "@/lib/market-queries";
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar, RadialBarChart, RadialBar, PolarAngleAxis,
+  ComposedChart, Line, ReferenceLine,
 } from "recharts";
-import { Bookmark, Bell, Share2, TrendingUp, TrendingDown, Zap, Shield, Brain, Activity, Wifi, WifiOff } from "lucide-react";
+import { Bookmark, Bell, Share2, TrendingUp, TrendingDown, Zap, Shield, Brain, Activity, Wifi, WifiOff, LineChart as LineIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
+
 
 export const Route = createFileRoute("/stock/$symbol")({
   loader: ({ params }) => {
@@ -44,11 +46,82 @@ const RANGE_TO_QUERY: Record<string, { interval: string; outputsize: number }> =
   MAX: { interval: "1month", outputsize: 240 },
 };
 
+function sma(data: number[], period: number): (number | null)[] {
+  const out: (number | null)[] = [];
+  for (let i = 0; i < data.length; i++) {
+    if (i < period - 1) { out.push(null); continue; }
+    let sum = 0;
+    for (let j = i - period + 1; j <= i; j++) sum += data[j];
+    out.push(sum / period);
+  }
+  return out;
+}
+function ema(data: number[], period: number): (number | null)[] {
+  const out: (number | null)[] = [];
+  const k = 2 / (period + 1);
+  let prev: number | null = null;
+  for (let i = 0; i < data.length; i++) {
+    if (i < period - 1) { out.push(null); continue; }
+    if (prev === null) {
+      let sum = 0; for (let j = 0; j < period; j++) sum += data[j];
+      prev = sum / period;
+    } else prev = data[i] * k + prev * (1 - k);
+    out.push(prev);
+  }
+  return out;
+}
+function bollinger(data: number[], period = 20, mult = 2) {
+  const mid = sma(data, period);
+  const up: (number | null)[] = []; const lo: (number | null)[] = [];
+  for (let i = 0; i < data.length; i++) {
+    if (i < period - 1 || mid[i] === null) { up.push(null); lo.push(null); continue; }
+    let s = 0;
+    for (let j = i - period + 1; j <= i; j++) s += (data[j] - (mid[i] as number)) ** 2;
+    const sd = Math.sqrt(s / period);
+    up.push((mid[i] as number) + mult * sd);
+    lo.push((mid[i] as number) - mult * sd);
+  }
+  return { mid, up, lo };
+}
+function rsi(data: number[], period = 14): (number | null)[] {
+  const out: (number | null)[] = [null];
+  let gains = 0, losses = 0;
+  for (let i = 1; i < data.length; i++) {
+    const d = data[i] - data[i - 1];
+    if (i <= period) {
+      if (d > 0) gains += d; else losses -= d;
+      if (i === period) { const rs = gains / (losses || 1); out.push(100 - 100 / (1 + rs)); }
+      else out.push(null);
+    } else {
+      gains = (gains * (period - 1) + Math.max(d, 0)) / period;
+      losses = (losses * (period - 1) + Math.max(-d, 0)) / period;
+      const rs = gains / (losses || 1);
+      out.push(100 - 100 / (1 + rs));
+    }
+  }
+  return out;
+}
+function macd(data: number[], fast = 12, slow = 26, signal = 9) {
+  const e1 = ema(data, fast); const e2 = ema(data, slow);
+  const line = data.map((_, i) => (e1[i] !== null && e2[i] !== null) ? (e1[i] as number) - (e2[i] as number) : null);
+  const validVals = line.map((v) => v ?? 0);
+  const sig = ema(validVals, signal);
+  const hist = line.map((v, i) => (v !== null && sig[i] !== null) ? v - (sig[i] as number) : null);
+  return { line, sig, hist };
+}
+
+type IndicatorKey = "sma20" | "sma50" | "ema20" | "bb" | "rsi" | "macd";
+
 function StockDetail() {
   const { stock: base } = Route.useLoaderData();
   const [tab, setTab] = useState<Tab>("Overview");
   const [range, setRange] = useState("1Y");
+  const [inds, setInds] = useState<Set<IndicatorKey>>(new Set(["sma50", "bb"]));
   const tdSymbol = toTdStock(base.symbol);
+
+  const toggleInd = (k: IndicatorKey) => {
+    const n = new Set(inds); n.has(k) ? n.delete(k) : n.add(k); setInds(n);
+  };
 
   // Live quote
   const quoteQ = useQuery(quotesQuery([tdSymbol]));
@@ -64,25 +137,34 @@ function StockDetail() {
 
   const chartData = useMemo(() => {
     const bars = seriesQ.data?.bars ?? [];
+    let base: Array<{ i: number; price: number; volume: number; t?: string }> = [];
     if (bars.length > 0) {
-      return bars.map((b, i) => ({ i, price: b.close, volume: b.volume, t: b.t }));
+      base = bars.map((b, i) => ({ i, price: b.close, volume: b.volume, t: b.t }));
+    } else {
+      const n = outputsize;
+      let v = stock.price * 0.75;
+      let seed = Math.abs(Math.floor(stock.price * 1000)) + n;
+      const rand = () => { seed = (seed * 9301 + 49297) % 233280; return seed / 233280; };
+      for (let i = 0; i < n; i++) {
+        v = v * (1 + (Math.sin(i * 0.15) * 0.02 + (rand() - 0.48) * 0.02));
+        base.push({ i, price: +v.toFixed(2), volume: Math.round(50 + rand() * 250) });
+      }
+      base[n - 1].price = stock.price;
     }
-    // Fallback synthetic series (SSR-stable seed based on price + range)
-    const n = outputsize;
-    const arr: Array<{ i: number; price: number; volume: number }> = [];
-    let v = stock.price * 0.75;
-    let seed = Math.abs(Math.floor(stock.price * 1000)) + n;
-    const rand = () => {
-      seed = (seed * 9301 + 49297) % 233280;
-      return seed / 233280;
-    };
-    for (let i = 0; i < n; i++) {
-      v = v * (1 + (Math.sin(i * 0.15) * 0.02 + (rand() - 0.48) * 0.02));
-      arr.push({ i, price: +v.toFixed(2), volume: Math.round(50 + rand() * 250) });
-    }
-    arr[n - 1].price = stock.price;
-    return arr;
+    const closes = base.map((r) => r.price);
+    const s20 = sma(closes, 20); const s50 = sma(closes, 50);
+    const e20 = ema(closes, 20);
+    const bb = bollinger(closes, 20, 2);
+    const rs = rsi(closes, 14);
+    const mc = macd(closes);
+    return base.map((r, i) => ({
+      ...r,
+      sma20: s20[i], sma50: s50[i], ema20: e20[i],
+      bbUp: bb.up[i], bbLo: bb.lo[i], bbMid: bb.mid[i],
+      rsi: rs[i], macd: mc.line[i], macdSig: mc.sig[i], macdHist: mc.hist[i],
+    }));
   }, [seriesQ.data, stock.price, outputsize]);
+
 
   return (
     <AppShell>
@@ -149,59 +231,108 @@ function StockDetail() {
           </div>
         </div>
 
-        {/* Chart */}
+        {/* Pro chart with indicators */}
         <div className="glass rounded-2xl p-5">
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
             <div>
-              <h3 className="text-sm font-semibold">Price Chart</h3>
-              <p className="text-[11px] text-muted-foreground">TradingView-style · daily close</p>
+              <h3 className="text-sm font-semibold flex items-center gap-2">
+                <LineIcon className="h-4 w-4 text-primary" /> Price Chart
+              </h3>
+              <p className="text-[11px] text-muted-foreground">TradingView-style · SMA · EMA · Bollinger · RSI · MACD</p>
             </div>
             <div className="flex gap-1 text-[11px]">
               {["1D", "1W", "1M", "3M", "1Y", "5Y", "MAX"].map((r) => (
-                <button
-                  key={r}
-                  onClick={() => setRange(r)}
-                  className={cn(
-                    "px-2.5 py-1 rounded-md font-medium transition",
-                    r === range ? "bg-primary/15 text-primary border border-primary/20" : "text-muted-foreground hover:bg-muted/40",
-                  )}
-                >{r}</button>
+                <button key={r} onClick={() => setRange(r)}
+                  className={cn("px-2.5 py-1 rounded-md font-medium transition",
+                    r === range ? "bg-primary/15 text-primary border border-primary/20" : "text-muted-foreground hover:bg-muted/40")}>{r}</button>
               ))}
             </div>
           </div>
+
+          <div className="mb-3 flex flex-wrap gap-1.5 text-[10px]">
+            {([
+              ["sma20", "SMA 20", "oklch(0.78 0.14 65)"],
+              ["sma50", "SMA 50", "oklch(0.68 0.18 265)"],
+              ["ema20", "EMA 20", "oklch(0.82 0.16 82)"],
+              ["bb", "Bollinger", "oklch(0.62 0.05 240)"],
+              ["rsi", "RSI 14", "oklch(0.74 0.17 320)"],
+              ["macd", "MACD", "oklch(0.7 0.15 200)"],
+            ] as [IndicatorKey, string, string][]).map(([k, label, color]) => (
+              <button key={k} onClick={() => toggleInd(k)}
+                className={cn("px-2 py-1 rounded-md border flex items-center gap-1.5 font-medium transition",
+                  inds.has(k) ? "bg-muted/40 border-border" : "bg-transparent border-border/40 text-muted-foreground")}>
+                <span className="inline-block h-2 w-2 rounded-sm" style={{ background: color, opacity: inds.has(k) ? 1 : 0.3 }} />
+                {label}
+              </button>
+            ))}
+          </div>
+
           <div className="h-80">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={chartData}>
+              <ComposedChart data={chartData}>
                 <defs>
                   <linearGradient id="pxg" x1="0" x2="0" y1="0" y2="1">
-                    <stop offset="0%" stopColor="oklch(0.74 0.17 155)" stopOpacity={0.4} />
+                    <stop offset="0%" stopColor="oklch(0.74 0.17 155)" stopOpacity={0.35} />
                     <stop offset="100%" stopColor="oklch(0.74 0.17 155)" stopOpacity={0} />
                   </linearGradient>
                 </defs>
                 <XAxis dataKey="i" hide />
-                <YAxis domain={["dataMin - 50", "dataMax + 50"]} tick={{ fill: "oklch(0.68 0.02 240)", fontSize: 11 }} width={55} tickFormatter={(v) => v.toLocaleString("en-IN")} />
-                <Tooltip
-                  contentStyle={{
-                    background: "oklch(0.2 0.014 240)",
-                    border: "1px solid oklch(0.3 0.015 240 / 0.6)",
-                    borderRadius: 12,
-                    fontSize: 12,
-                  }}
-                />
-                <Area type="monotone" dataKey="price" stroke="oklch(0.74 0.17 155)" strokeWidth={2} fill="url(#pxg)" />
-              </AreaChart>
+                <YAxis domain={["dataMin - 20", "dataMax + 20"]} tick={{ fill: "oklch(0.68 0.02 240)", fontSize: 11 }} width={55} tickFormatter={(v) => v.toLocaleString("en-IN")} />
+                <Tooltip contentStyle={{ background: "oklch(0.2 0.014 240)", border: "1px solid oklch(0.3 0.015 240 / 0.6)", borderRadius: 12, fontSize: 12 }} />
+                <Area type="monotone" dataKey="price" stroke="oklch(0.74 0.17 155)" strokeWidth={2} fill="url(#pxg)" isAnimationActive={false} />
+                {inds.has("bb") && <Line type="monotone" dataKey="bbUp" stroke="oklch(0.62 0.05 240)" strokeWidth={1} dot={false} strokeDasharray="3 3" isAnimationActive={false} />}
+                {inds.has("bb") && <Line type="monotone" dataKey="bbLo" stroke="oklch(0.62 0.05 240)" strokeWidth={1} dot={false} strokeDasharray="3 3" isAnimationActive={false} />}
+                {inds.has("sma20") && <Line type="monotone" dataKey="sma20" stroke="oklch(0.78 0.14 65)" strokeWidth={1.4} dot={false} isAnimationActive={false} />}
+                {inds.has("sma50") && <Line type="monotone" dataKey="sma50" stroke="oklch(0.68 0.18 265)" strokeWidth={1.4} dot={false} isAnimationActive={false} />}
+                {inds.has("ema20") && <Line type="monotone" dataKey="ema20" stroke="oklch(0.82 0.16 82)" strokeWidth={1.2} dot={false} isAnimationActive={false} />}
+              </ComposedChart>
             </ResponsiveContainer>
           </div>
+
           <div className="h-24 mt-2">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={chartData}>
                 <XAxis dataKey="i" hide />
                 <YAxis hide />
-                <Bar dataKey="volume" fill="oklch(0.3 0.02 240)" />
+                <Bar dataKey="volume" fill="oklch(0.3 0.02 240)" isAnimationActive={false} />
               </BarChart>
             </ResponsiveContainer>
           </div>
+
+          {inds.has("rsi") && (
+            <div className="h-24 mt-3 border-t border-border/40 pt-2">
+              <div className="text-[10px] text-muted-foreground uppercase tracking-widest mb-1">RSI 14</div>
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart data={chartData}>
+                  <XAxis dataKey="i" hide />
+                  <YAxis domain={[0, 100]} width={30} tick={{ fill: "oklch(0.68 0.02 240)", fontSize: 10 }} />
+                  <Tooltip contentStyle={{ background: "oklch(0.2 0.014 240)", border: "1px solid oklch(0.3 0.015 240 / 0.6)", borderRadius: 8, fontSize: 11 }} />
+                  <ReferenceLine y={70} stroke="oklch(0.65 0.22 22)" strokeDasharray="2 3" strokeOpacity={0.4} />
+                  <ReferenceLine y={30} stroke="oklch(0.74 0.17 155)" strokeDasharray="2 3" strokeOpacity={0.4} />
+                  <Line type="monotone" dataKey="rsi" stroke="oklch(0.74 0.17 320)" strokeWidth={1.5} dot={false} isAnimationActive={false} />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+
+          {inds.has("macd") && (
+            <div className="h-28 mt-3 border-t border-border/40 pt-2">
+              <div className="text-[10px] text-muted-foreground uppercase tracking-widest mb-1">MACD 12·26·9</div>
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart data={chartData}>
+                  <XAxis dataKey="i" hide />
+                  <YAxis width={30} tick={{ fill: "oklch(0.68 0.02 240)", fontSize: 10 }} />
+                  <Tooltip contentStyle={{ background: "oklch(0.2 0.014 240)", border: "1px solid oklch(0.3 0.015 240 / 0.6)", borderRadius: 8, fontSize: 11 }} />
+                  <ReferenceLine y={0} stroke="oklch(0.5 0.02 240)" strokeOpacity={0.5} />
+                  <Bar dataKey="macdHist" fill="oklch(0.5 0.05 240)" isAnimationActive={false} />
+                  <Line type="monotone" dataKey="macd" stroke="oklch(0.7 0.15 200)" strokeWidth={1.4} dot={false} isAnimationActive={false} />
+                  <Line type="monotone" dataKey="macdSig" stroke="oklch(0.82 0.16 82)" strokeWidth={1.2} dot={false} isAnimationActive={false} />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+          )}
         </div>
+
 
         {/* KPI cards */}
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">

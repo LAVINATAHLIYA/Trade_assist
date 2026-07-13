@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as TradeRouteImport } from './routes/trade'
 import { Route as PortfolioRouteImport } from './routes/portfolio'
 import { Route as JournalRouteImport } from './routes/journal'
 import { Route as ExplorerRouteImport } from './routes/explorer'
@@ -17,6 +18,11 @@ import { Route as AnalyticsRouteImport } from './routes/analytics'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as StockSymbolRouteImport } from './routes/stock.$symbol'
 
+const TradeRoute = TradeRouteImport.update({
+  id: '/trade',
+  path: '/trade',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const PortfolioRoute = PortfolioRouteImport.update({
   id: '/portfolio',
   path: '/portfolio',
@@ -60,6 +66,7 @@ export interface FileRoutesByFullPath {
   '/explorer': typeof ExplorerRoute
   '/journal': typeof JournalRoute
   '/portfolio': typeof PortfolioRoute
+  '/trade': typeof TradeRoute
   '/stock/$symbol': typeof StockSymbolRoute
 }
 export interface FileRoutesByTo {
@@ -69,6 +76,7 @@ export interface FileRoutesByTo {
   '/explorer': typeof ExplorerRoute
   '/journal': typeof JournalRoute
   '/portfolio': typeof PortfolioRoute
+  '/trade': typeof TradeRoute
   '/stock/$symbol': typeof StockSymbolRoute
 }
 export interface FileRoutesById {
@@ -79,6 +87,7 @@ export interface FileRoutesById {
   '/explorer': typeof ExplorerRoute
   '/journal': typeof JournalRoute
   '/portfolio': typeof PortfolioRoute
+  '/trade': typeof TradeRoute
   '/stock/$symbol': typeof StockSymbolRoute
 }
 export interface FileRouteTypes {
@@ -90,6 +99,7 @@ export interface FileRouteTypes {
     | '/explorer'
     | '/journal'
     | '/portfolio'
+    | '/trade'
     | '/stock/$symbol'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -99,6 +109,7 @@ export interface FileRouteTypes {
     | '/explorer'
     | '/journal'
     | '/portfolio'
+    | '/trade'
     | '/stock/$symbol'
   id:
     | '__root__'
@@ -108,6 +119,7 @@ export interface FileRouteTypes {
     | '/explorer'
     | '/journal'
     | '/portfolio'
+    | '/trade'
     | '/stock/$symbol'
   fileRoutesById: FileRoutesById
 }
@@ -118,11 +130,19 @@ export interface RootRouteChildren {
   ExplorerRoute: typeof ExplorerRoute
   JournalRoute: typeof JournalRoute
   PortfolioRoute: typeof PortfolioRoute
+  TradeRoute: typeof TradeRoute
   StockSymbolRoute: typeof StockSymbolRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/trade': {
+      id: '/trade'
+      path: '/trade'
+      fullPath: '/trade'
+      preLoaderRoute: typeof TradeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/portfolio': {
       id: '/portfolio'
       path: '/portfolio'
@@ -182,18 +202,9 @@ const rootRouteChildren: RootRouteChildren = {
   ExplorerRoute: ExplorerRoute,
   JournalRoute: JournalRoute,
   PortfolioRoute: PortfolioRoute,
+  TradeRoute: TradeRoute,
   StockSymbolRoute: StockSymbolRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}
