@@ -10,15 +10,25 @@ export type IndexTicker = {
   spark: number[];
 };
 
+// Deterministic PRNG so SSR and client produce identical values (kills hydration warnings)
+let _seed = 1337;
+const rand = () => {
+  _seed = (_seed * 9301 + 49297) % 233280;
+  return _seed / 233280;
+};
+const seed = (n: number) => { _seed = n; };
+
 const spark = (base: number, n = 24, vol = 0.02) => {
+  seed(Math.floor(base * 100));
   const arr: number[] = [];
   let v = base;
   for (let i = 0; i < n; i++) {
-    v = v * (1 + (Math.sin(i * 0.7) * vol + (Math.random() - 0.5) * vol));
+    v = v * (1 + (Math.sin(i * 0.7) * vol + (rand() - 0.5) * vol));
     arr.push(+v.toFixed(2));
   }
   return arr;
 };
+
 
 export const indices: IndexTicker[] = [
   { symbol: "NIFTY", name: "Nifty 50", price: 24785.4, change: 132.8, changePct: 0.54, spark: spark(24500) },
@@ -56,25 +66,29 @@ const mkStock = (
   price: number,
   changePct: number,
   overrides: Partial<Stock> = {},
-): Stock => ({
-  symbol,
-  name,
-  sector,
-  price,
-  change: +(price * (changePct / 100)).toFixed(2),
-  changePct,
-  marketCap: Math.round(price * 100 + Math.random() * 50000),
-  pe: +(15 + Math.random() * 45).toFixed(1),
-  roe: +(8 + Math.random() * 30).toFixed(1),
-  roce: +(10 + Math.random() * 28).toFixed(1),
-  revGrowth: +(-5 + Math.random() * 40).toFixed(1),
-  debtEquity: +(Math.random() * 1.5).toFixed(2),
-  divYield: +(Math.random() * 3.5).toFixed(2),
-  rsi: +(30 + Math.random() * 45).toFixed(1),
-  macd: +(-2 + Math.random() * 4).toFixed(2),
-  volume: +(20 + Math.random() * 900).toFixed(1),
-  ...overrides,
-});
+): Stock => {
+  seed(symbol.split("").reduce((a, c) => a + c.charCodeAt(0), 1) * 7);
+  return {
+    symbol,
+    name,
+    sector,
+    price,
+    change: +(price * (changePct / 100)).toFixed(2),
+    changePct,
+    marketCap: Math.round(price * 100 + rand() * 50000),
+    pe: +(15 + rand() * 45).toFixed(1),
+    roe: +(8 + rand() * 30).toFixed(1),
+    roce: +(10 + rand() * 28).toFixed(1),
+    revGrowth: +(-5 + rand() * 40).toFixed(1),
+    debtEquity: +(rand() * 1.5).toFixed(2),
+    divYield: +(rand() * 3.5).toFixed(2),
+    rsi: +(30 + rand() * 45).toFixed(1),
+    macd: +(-2 + rand() * 4).toFixed(2),
+    volume: +(20 + rand() * 900).toFixed(1),
+    ...overrides,
+  };
+};
+
 
 export const stocks: Stock[] = [
   mkStock("RELIANCE", "Reliance Industries", "Energy", 2914.5, 1.24),
