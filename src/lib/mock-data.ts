@@ -10,20 +10,24 @@ export type IndexTicker = {
   spark: number[];
 };
 
-// Deterministic PRNG so SSR and client produce identical values (kills hydration warnings)
-let _seed = 1337;
-const rand = () => {
-  _seed = (_seed * 9301 + 49297) % 233280;
-  return _seed / 233280;
+// Fully deterministic PRNG factories — never share state, so SSR and client
+// always produce identical values regardless of module import order.
+const makeRand = (seedNum: number) => {
+  let s = seedNum || 1;
+  return () => {
+    s = (s * 9301 + 49297) % 233280;
+    return s / 233280;
+  };
 };
-const seed = (n: number) => { _seed = n; };
+const hashStr = (str: string) =>
+  str.split("").reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7);
 
 const spark = (base: number, n = 24, vol = 0.02) => {
-  seed(Math.floor(base * 100));
+  const r = makeRand(Math.floor(base * 100));
   const arr: number[] = [];
   let v = base;
   for (let i = 0; i < n; i++) {
-    v = v * (1 + (Math.sin(i * 0.7) * vol + (rand() - 0.5) * vol));
+    v = v * (1 + (Math.sin(i * 0.7) * vol + (r() - 0.5) * vol));
     arr.push(+v.toFixed(2));
   }
   return arr;
@@ -67,7 +71,7 @@ const mkStock = (
   changePct: number,
   overrides: Partial<Stock> = {},
 ): Stock => {
-  seed(symbol.split("").reduce((a, c) => a + c.charCodeAt(0), 1) * 7);
+  const r = makeRand(hashStr(symbol) * 7);
   return {
     symbol,
     name,
@@ -75,16 +79,16 @@ const mkStock = (
     price,
     change: +(price * (changePct / 100)).toFixed(2),
     changePct,
-    marketCap: Math.round(price * 100 + rand() * 50000),
-    pe: +(15 + rand() * 45).toFixed(1),
-    roe: +(8 + rand() * 30).toFixed(1),
-    roce: +(10 + rand() * 28).toFixed(1),
-    revGrowth: +(-5 + rand() * 40).toFixed(1),
-    debtEquity: +(rand() * 1.5).toFixed(2),
-    divYield: +(rand() * 3.5).toFixed(2),
-    rsi: +(30 + rand() * 45).toFixed(1),
-    macd: +(-2 + rand() * 4).toFixed(2),
-    volume: +(20 + rand() * 900).toFixed(1),
+    marketCap: Math.round(price * 100 + r() * 50000),
+    pe: +(15 + r() * 45).toFixed(1),
+    roe: +(8 + r() * 30).toFixed(1),
+    roce: +(10 + r() * 28).toFixed(1),
+    revGrowth: +(-5 + r() * 40).toFixed(1),
+    debtEquity: +(r() * 1.5).toFixed(2),
+    divYield: +(r() * 3.5).toFixed(2),
+    rsi: +(30 + r() * 45).toFixed(1),
+    macd: +(-2 + r() * 4).toFixed(2),
+    volume: +(20 + r() * 900).toFixed(1),
     ...overrides,
   };
 };
