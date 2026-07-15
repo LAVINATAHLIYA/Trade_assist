@@ -81,7 +81,7 @@ const EMOTIONS = ["Calm", "Confident", "Focused", "Anxious", "Greedy", "FOMO", "
 
 function hash(s: string) { let h = 7; for (const c of s) h = ((h * 31) + c.charCodeAt(0)) >>> 0; return h; }
 function makeRand(seed: number) { let s = seed || 1; return () => (s = (s * 9301 + 49297) % 233280) / 233280; }
-function pick<T>(arr: T[], r: () => number) { return arr[Math.floor(r() * arr.length)]; }
+function pick<T>(arr: T[], r: number) { return arr[Math.floor(r * arr.length)]; }
 
 function generateSeed(): Trade[] {
   const r = makeRand(20260715);
