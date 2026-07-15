@@ -14,7 +14,325 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      strategies: {
+        Row: {
+          common_mistakes: string[] | null
+          confirmation_rules: string | null
+          created_at: string
+          description: string | null
+          entry_rules: string | null
+          exit_rule: string | null
+          id: string
+          instrument: Database["public"]["Enums"]["trade_instrument"] | null
+          market_condition: string | null
+          max_risk: number | null
+          name: string
+          sizing_rule: string | null
+          stop_loss_rule: string | null
+          target_rule: string | null
+          timeframe: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          common_mistakes?: string[] | null
+          confirmation_rules?: string | null
+          created_at?: string
+          description?: string | null
+          entry_rules?: string | null
+          exit_rule?: string | null
+          id?: string
+          instrument?: Database["public"]["Enums"]["trade_instrument"] | null
+          market_condition?: string | null
+          max_risk?: number | null
+          name: string
+          sizing_rule?: string | null
+          stop_loss_rule?: string | null
+          target_rule?: string | null
+          timeframe?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          common_mistakes?: string[] | null
+          confirmation_rules?: string | null
+          created_at?: string
+          description?: string | null
+          entry_rules?: string | null
+          exit_rule?: string | null
+          id?: string
+          instrument?: Database["public"]["Enums"]["trade_instrument"] | null
+          market_condition?: string | null
+          max_risk?: number | null
+          name?: string
+          sizing_rule?: string | null
+          stop_loss_rule?: string | null
+          target_rule?: string | null
+          timeframe?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      trade_attachments: {
+        Row: {
+          created_at: string
+          filename: string | null
+          id: string
+          kind: string
+          trade_id: string
+          url: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          filename?: string | null
+          id?: string
+          kind?: string
+          trade_id: string
+          url: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          filename?: string | null
+          id?: string
+          kind?: string
+          trade_id?: string
+          url?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "trade_attachments_trade_id_fkey"
+            columns: ["trade_id"]
+            isOneToOne: false
+            referencedRelation: "trades"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      trade_reviews: {
+        Row: {
+          ai_review: string | null
+          created_at: string
+          entry_notes: string | null
+          exit_notes: string | null
+          grade: Database["public"]["Enums"]["trade_grade"] | null
+          id: string
+          psychology_notes: string | null
+          risk_notes: string | null
+          thesis: string | null
+          trade_id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          ai_review?: string | null
+          created_at?: string
+          entry_notes?: string | null
+          exit_notes?: string | null
+          grade?: Database["public"]["Enums"]["trade_grade"] | null
+          id?: string
+          psychology_notes?: string | null
+          risk_notes?: string | null
+          thesis?: string | null
+          trade_id: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          ai_review?: string | null
+          created_at?: string
+          entry_notes?: string | null
+          exit_notes?: string | null
+          grade?: Database["public"]["Enums"]["trade_grade"] | null
+          id?: string
+          psychology_notes?: string | null
+          risk_notes?: string | null
+          thesis?: string | null
+          trade_id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "trade_reviews_trade_id_fkey"
+            columns: ["trade_id"]
+            isOneToOne: false
+            referencedRelation: "trades"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      trades: {
+        Row: {
+          charges: number | null
+          confidence_before: number | null
+          created_at: string
+          direction: Database["public"]["Enums"]["trade_direction"]
+          duration: Database["public"]["Enums"]["trade_duration"]
+          emotion_after: string | null
+          emotion_before: string | null
+          energy_before: number | null
+          entry_price: number
+          entry_quality: number | null
+          entry_time: string
+          event_context: string | null
+          execution_quality: number | null
+          exit_price: number | null
+          exit_quality: number | null
+          exit_time: string | null
+          focus_before: number | null
+          followed_plan: boolean | null
+          fomo: boolean | null
+          id: string
+          instrument: Database["public"]["Enums"]["trade_instrument"]
+          lessons: string | null
+          market_alignment: string | null
+          market_trend: string | null
+          mistakes: string[] | null
+          option_strategy: string | null
+          planned_r: number | null
+          planned_reward: number | null
+          playbook_id: string | null
+          pnl_realized: number | null
+          quantity: number
+          rationale: string | null
+          revenge: boolean | null
+          risk_amount: number | null
+          risk_mgmt_quality: number | null
+          sector: string | null
+          setup: string | null
+          source: string | null
+          status: Database["public"]["Enums"]["trade_status"]
+          stop_loss: number | null
+          strategy: string | null
+          stress_before: number | null
+          symbol: string
+          tags: string[] | null
+          target_2: number | null
+          target_3: number | null
+          target_price: number | null
+          timeframe: string | null
+          trade_type: string | null
+          updated_at: string
+          user_id: string
+          what_went_well: string | null
+          what_went_wrong: string | null
+        }
+        Insert: {
+          charges?: number | null
+          confidence_before?: number | null
+          created_at?: string
+          direction?: Database["public"]["Enums"]["trade_direction"]
+          duration?: Database["public"]["Enums"]["trade_duration"]
+          emotion_after?: string | null
+          emotion_before?: string | null
+          energy_before?: number | null
+          entry_price?: number
+          entry_quality?: number | null
+          entry_time?: string
+          event_context?: string | null
+          execution_quality?: number | null
+          exit_price?: number | null
+          exit_quality?: number | null
+          exit_time?: string | null
+          focus_before?: number | null
+          followed_plan?: boolean | null
+          fomo?: boolean | null
+          id?: string
+          instrument?: Database["public"]["Enums"]["trade_instrument"]
+          lessons?: string | null
+          market_alignment?: string | null
+          market_trend?: string | null
+          mistakes?: string[] | null
+          option_strategy?: string | null
+          planned_r?: number | null
+          planned_reward?: number | null
+          playbook_id?: string | null
+          pnl_realized?: number | null
+          quantity?: number
+          rationale?: string | null
+          revenge?: boolean | null
+          risk_amount?: number | null
+          risk_mgmt_quality?: number | null
+          sector?: string | null
+          setup?: string | null
+          source?: string | null
+          status?: Database["public"]["Enums"]["trade_status"]
+          stop_loss?: number | null
+          strategy?: string | null
+          stress_before?: number | null
+          symbol: string
+          tags?: string[] | null
+          target_2?: number | null
+          target_3?: number | null
+          target_price?: number | null
+          timeframe?: string | null
+          trade_type?: string | null
+          updated_at?: string
+          user_id: string
+          what_went_well?: string | null
+          what_went_wrong?: string | null
+        }
+        Update: {
+          charges?: number | null
+          confidence_before?: number | null
+          created_at?: string
+          direction?: Database["public"]["Enums"]["trade_direction"]
+          duration?: Database["public"]["Enums"]["trade_duration"]
+          emotion_after?: string | null
+          emotion_before?: string | null
+          energy_before?: number | null
+          entry_price?: number
+          entry_quality?: number | null
+          entry_time?: string
+          event_context?: string | null
+          execution_quality?: number | null
+          exit_price?: number | null
+          exit_quality?: number | null
+          exit_time?: string | null
+          focus_before?: number | null
+          followed_plan?: boolean | null
+          fomo?: boolean | null
+          id?: string
+          instrument?: Database["public"]["Enums"]["trade_instrument"]
+          lessons?: string | null
+          market_alignment?: string | null
+          market_trend?: string | null
+          mistakes?: string[] | null
+          option_strategy?: string | null
+          planned_r?: number | null
+          planned_reward?: number | null
+          playbook_id?: string | null
+          pnl_realized?: number | null
+          quantity?: number
+          rationale?: string | null
+          revenge?: boolean | null
+          risk_amount?: number | null
+          risk_mgmt_quality?: number | null
+          sector?: string | null
+          setup?: string | null
+          source?: string | null
+          status?: Database["public"]["Enums"]["trade_status"]
+          stop_loss?: number | null
+          strategy?: string | null
+          stress_before?: number | null
+          symbol?: string
+          tags?: string[] | null
+          target_2?: number | null
+          target_3?: number | null
+          target_price?: number | null
+          timeframe?: string | null
+          trade_type?: string | null
+          updated_at?: string
+          user_id?: string
+          what_went_well?: string | null
+          what_went_wrong?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
@@ -23,7 +341,15 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      [_ in never]: never
+      trade_direction: "long" | "short" | "non_directional"
+      trade_duration:
+        | "intraday"
+        | "swing"
+        | "positional_weekly"
+        | "positional_monthly"
+      trade_grade: "A+" | "A" | "B" | "C" | "D" | "F"
+      trade_instrument: "equity" | "equity_mtf" | "futures" | "options"
+      trade_status: "open" | "closed" | "cancelled"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +476,17 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      trade_direction: ["long", "short", "non_directional"],
+      trade_duration: [
+        "intraday",
+        "swing",
+        "positional_weekly",
+        "positional_monthly",
+      ],
+      trade_grade: ["A+", "A", "B", "C", "D", "F"],
+      trade_instrument: ["equity", "equity_mtf", "futures", "options"],
+      trade_status: ["open", "closed", "cancelled"],
+    },
   },
 } as const
