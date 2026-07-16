@@ -825,8 +825,30 @@ function AiReviewTab({ trades }: { trades: Trade[] }) {
 function ImportModal({ onClose }: { onClose: () => void }) {
   const [text, setText] = useState("symbol,direction,quantity,entry_price,exit_price,entry_time,exit_time,strategy\nRELIANCE,long,10,2450,2510,2026-07-01T09:30,2026-07-03T15:00,Breakout");
   const [preview, setPreview] = useState<Partial<Trade>[]>([]);
+  const [fileName, setFileName] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
 
-  const parse = () => setPreview(parseCsv(text));
+  const parse = () => { setErr(null); try { setPreview(parseCsv(text)); } catch (e: any) { setErr(e.message); } };
+
+  const handleFile = async (file: File) => {
+    setErr(null); setFileName(file.name);
+    try {
+      const isXlsx = /\.(xlsx|xls)$/i.test(file.name);
+      if (isXlsx) {
+        const buf = await file.arrayBuffer();
+        const wb = XLSX.read(buf, { type: "array" });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const csv = XLSX.utils.sheet_to_csv(ws);
+        setText(csv);
+        setPreview(parseCsv(csv));
+      } else {
+        const t = await file.text();
+        setText(t);
+        setPreview(parseCsv(t));
+      }
+    } catch (e: any) { setErr(`Failed to parse ${file.name}: ${e.message}`); }
+  };
+
   const commit = () => {
     for (const p of preview) {
       addTrade({
@@ -841,15 +863,47 @@ function ImportModal({ onClose }: { onClose: () => void }) {
     onClose();
   };
 
+  const downloadTemplate = () => {
+    const ws = XLSX.utils.aoa_to_sheet([
+      ["symbol", "direction", "quantity", "entry_price", "exit_price", "entry_time", "exit_time", "strategy", "instrument", "duration"],
+      ["RELIANCE", "long", 10, 2450, 2510, "2026-07-01 09:30", "2026-07-03 15:00", "Breakout", "equity", "swing"],
+      ["HDFCBANK", "short", 25, 1620, 1595, "2026-07-05 10:15", "2026-07-05 14:00", "Reversal", "equity", "intraday"],
+    ]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Trades");
+    XLSX.writeFile(wb, "stocksense-trade-template.xlsx");
+  };
+
   return (
     <Modal onClose={onClose} title="Import Trades">
       <div className="space-y-4">
         <div className="text-xs text-muted-foreground">
-          Paste CSV with columns: <span className="num text-foreground">symbol, direction, quantity, entry_price, exit_price, entry_time, exit_time, strategy</span>.
-          Broker-specific parsers (Zerodha, Upstox, ICICI, Angel, Groww) ship in the next pass.
+          Upload an <span className="text-foreground font-medium">Excel (.xlsx / .xls)</span> or <span className="text-foreground font-medium">CSV</span> file exported from your broker,
+          or paste CSV below. Required columns: <span className="num text-foreground">symbol, direction, quantity, entry_price, exit_price, entry_time, exit_time, strategy</span>.
         </div>
-        <textarea rows={8} value={text} onChange={(e) => setText(e.target.value)}
-          className="w-full text-xs num p-3 rounded-lg bg-muted/40 border border-border/60 focus:outline-none focus:ring-2 focus:ring-primary/40 resize-none" />
+
+        <label className="glass rounded-xl border border-dashed border-border/60 hover:border-primary/60 hover:bg-primary/5 p-6 flex flex-col items-center justify-center gap-2 cursor-pointer transition">
+          <Upload className="h-5 w-5 text-primary" />
+          <div className="text-xs font-medium">{fileName ?? "Drop or click to upload .xlsx / .csv"}</div>
+          <div className="text-[10px] text-muted-foreground">Zerodha, Upstox, Angel, Groww exports work — headers are auto-mapped when they match.</div>
+          <input type="file" accept=".xlsx,.xls,.csv" className="hidden"
+            onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])} />
+        </label>
+
+        <div className="flex items-center gap-2">
+          <button onClick={downloadTemplate} className="h-8 px-3 text-[11px] rounded-lg border border-border/60 hover:bg-muted/40 flex items-center gap-1.5">
+            <Download className="h-3 w-3" /> Download Excel template
+          </button>
+        </div>
+
+        {err && <div className="text-xs text-destructive bg-destructive/10 border border-destructive/30 rounded-lg p-2">{err}</div>}
+
+        <div>
+          <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1.5">Or paste CSV</div>
+          <textarea rows={6} value={text} onChange={(e) => setText(e.target.value)}
+            className="w-full text-xs num p-3 rounded-lg bg-muted/40 border border-border/60 focus:outline-none focus:ring-2 focus:ring-primary/40 resize-none" />
+        </div>
+
         <div className="flex items-center gap-2">
           <button onClick={parse} className="h-9 px-3 text-xs rounded-lg border border-border/60 hover:bg-muted/40">Parse preview</button>
           {preview.length > 0 && (
@@ -861,6 +915,7 @@ function ImportModal({ onClose }: { onClose: () => void }) {
           <div className="max-h-64 overflow-auto glass rounded-lg">
             <table className="w-full text-xs">
               <thead className="bg-muted/20"><tr>{["Symbol", "Dir", "Qty", "Entry", "Exit"].map(h => <th key={h} className="text-left px-3 py-2 text-[10px] uppercase tracking-widest text-muted-foreground">{h}</th>)}</tr></thead>
+
               <tbody>
                 {preview.map((p, i) => (
                   <tr key={i} className="border-b border-border/40">
