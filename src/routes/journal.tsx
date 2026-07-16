@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState, useEffect, type ReactNode } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { AppShell } from "@/components/app-shell";
 import { cn } from "@/lib/utils";
@@ -6,6 +6,7 @@ import {
   Plus, Upload, Download, Filter as FilterIcon, TrendingUp, TrendingDown,
   X, Target, Shield, Clock, Sparkles, BookOpen, Calendar as CalendarIcon,
   BarChart3, ListChecks, AlertTriangle, Zap, ChevronRight, PieChart, FileText,
+  ClipboardList, Layers, Gavel, Save, Trash2, CheckCircle2, Circle,
 } from "lucide-react";
 import { formatINR, formatPct, Delta, KpiCard, SectionHeader, Sparkline } from "@/lib/ui-helpers";
 import {
@@ -14,6 +15,13 @@ import {
   pnl, unrealized, rMultiple, filterByRange, computeMetrics,
   cumulativeCurve, mistakeStats, parseCsv, groupBy,
 } from "@/lib/journal-store";
+import {
+  type DailyPlan, type PlannedTrade, type TradingRule, type OptionLeg, type BuiltStrategy,
+  usePlans, useRules, useStrategies, getPlan, savePlan,
+  upsertRule, deleteRule, toggleRule, addStrategy, deleteStrategy,
+  payoffAt, payoffCurve, todayKey,
+} from "@/lib/plan-store";
+import * as XLSX from "xlsx";
 
 export const Route = createFileRoute("/journal")({
   component: Journal,
@@ -26,14 +34,19 @@ export const Route = createFileRoute("/journal")({
 });
 
 type TabId =
-  | "overview" | "trades" | "new" | "open" | "calendar"
+  | "overview" | "plan" | "builder" | "postmarket" | "rules"
+  | "trades" | "new" | "open" | "calendar"
   | "strategies" | "playbook" | "reports" | "mistakes" | "ai";
 
 const TABS: { id: TabId; label: string; icon: typeof BarChart3 }[] = [
   { id: "overview", label: "Overview", icon: BarChart3 },
+  { id: "plan", label: "Daily Plan", icon: ClipboardList },
+  { id: "builder", label: "Trade Builder", icon: Layers },
   { id: "trades", label: "Trades", icon: ListChecks },
   { id: "new", label: "New Trade", icon: Plus },
   { id: "open", label: "Open Trades", icon: Zap },
+  { id: "postmarket", label: "Post-Market", icon: BookOpen },
+  { id: "rules", label: "Trading Rules", icon: Gavel },
   { id: "calendar", label: "Calendar", icon: CalendarIcon },
   { id: "strategies", label: "Strategies", icon: Target },
   { id: "playbook", label: "Playbook", icon: BookOpen },
@@ -47,6 +60,7 @@ const RANGES = [
   { id: "month", label: "1M" }, { id: "3m", label: "3M" }, { id: "6m", label: "6M" },
   { id: "ytd", label: "YTD" }, { id: "1y", label: "1Y" }, { id: "all", label: "All" },
 ];
+
 
 function Journal() {
   const trades = useTrades();
@@ -104,9 +118,13 @@ function Journal() {
         </div>
 
         {tab === "overview" && <OverviewTab trades={scoped} />}
+        {tab === "plan" && <DailyPlanTab />}
+        {tab === "builder" && <TradeBuilderTab />}
         {tab === "trades" && <TradesTab trades={scoped} onOpen={setDetail} />}
         {tab === "new" && <NewTradeTab onSaved={() => setTab("trades")} />}
         {tab === "open" && <OpenTradesTab trades={trades} onOpen={setDetail} />}
+        {tab === "postmarket" && <PostMarketTab trades={scoped} />}
+        {tab === "rules" && <RulesTab />}
         {tab === "calendar" && <CalendarTab trades={scoped} />}
         {tab === "strategies" && <StrategiesTab trades={scoped} />}
         {tab === "playbook" && <PlaybookTab />}
@@ -120,6 +138,7 @@ function Journal() {
     </AppShell>
   );
 }
+
 
 // ============================================================================
 // OVERVIEW
@@ -806,8 +825,30 @@ function AiReviewTab({ trades }: { trades: Trade[] }) {
 function ImportModal({ onClose }: { onClose: () => void }) {
   const [text, setText] = useState("symbol,direction,quantity,entry_price,exit_price,entry_time,exit_time,strategy\nRELIANCE,long,10,2450,2510,2026-07-01T09:30,2026-07-03T15:00,Breakout");
   const [preview, setPreview] = useState<Partial<Trade>[]>([]);
+  const [fileName, setFileName] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
 
-  const parse = () => setPreview(parseCsv(text));
+  const parse = () => { setErr(null); try { setPreview(parseCsv(text)); } catch (e: any) { setErr(e.message); } };
+
+  const handleFile = async (file: File) => {
+    setErr(null); setFileName(file.name);
+    try {
+      const isXlsx = /\.(xlsx|xls)$/i.test(file.name);
+      if (isXlsx) {
+        const buf = await file.arrayBuffer();
+        const wb = XLSX.read(buf, { type: "array" });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const csv = XLSX.utils.sheet_to_csv(ws);
+        setText(csv);
+        setPreview(parseCsv(csv));
+      } else {
+        const t = await file.text();
+        setText(t);
+        setPreview(parseCsv(t));
+      }
+    } catch (e: any) { setErr(`Failed to parse ${file.name}: ${e.message}`); }
+  };
+
   const commit = () => {
     for (const p of preview) {
       addTrade({
@@ -822,15 +863,47 @@ function ImportModal({ onClose }: { onClose: () => void }) {
     onClose();
   };
 
+  const downloadTemplate = () => {
+    const ws = XLSX.utils.aoa_to_sheet([
+      ["symbol", "direction", "quantity", "entry_price", "exit_price", "entry_time", "exit_time", "strategy", "instrument", "duration"],
+      ["RELIANCE", "long", 10, 2450, 2510, "2026-07-01 09:30", "2026-07-03 15:00", "Breakout", "equity", "swing"],
+      ["HDFCBANK", "short", 25, 1620, 1595, "2026-07-05 10:15", "2026-07-05 14:00", "Reversal", "equity", "intraday"],
+    ]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Trades");
+    XLSX.writeFile(wb, "stocksense-trade-template.xlsx");
+  };
+
   return (
     <Modal onClose={onClose} title="Import Trades">
       <div className="space-y-4">
         <div className="text-xs text-muted-foreground">
-          Paste CSV with columns: <span className="num text-foreground">symbol, direction, quantity, entry_price, exit_price, entry_time, exit_time, strategy</span>.
-          Broker-specific parsers (Zerodha, Upstox, ICICI, Angel, Groww) ship in the next pass.
+          Upload an <span className="text-foreground font-medium">Excel (.xlsx / .xls)</span> or <span className="text-foreground font-medium">CSV</span> file exported from your broker,
+          or paste CSV below. Required columns: <span className="num text-foreground">symbol, direction, quantity, entry_price, exit_price, entry_time, exit_time, strategy</span>.
         </div>
-        <textarea rows={8} value={text} onChange={(e) => setText(e.target.value)}
-          className="w-full text-xs num p-3 rounded-lg bg-muted/40 border border-border/60 focus:outline-none focus:ring-2 focus:ring-primary/40 resize-none" />
+
+        <label className="glass rounded-xl border border-dashed border-border/60 hover:border-primary/60 hover:bg-primary/5 p-6 flex flex-col items-center justify-center gap-2 cursor-pointer transition">
+          <Upload className="h-5 w-5 text-primary" />
+          <div className="text-xs font-medium">{fileName ?? "Drop or click to upload .xlsx / .csv"}</div>
+          <div className="text-[10px] text-muted-foreground">Zerodha, Upstox, Angel, Groww exports work — headers are auto-mapped when they match.</div>
+          <input type="file" accept=".xlsx,.xls,.csv" className="hidden"
+            onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])} />
+        </label>
+
+        <div className="flex items-center gap-2">
+          <button onClick={downloadTemplate} className="h-8 px-3 text-[11px] rounded-lg border border-border/60 hover:bg-muted/40 flex items-center gap-1.5">
+            <Download className="h-3 w-3" /> Download Excel template
+          </button>
+        </div>
+
+        {err && <div className="text-xs text-destructive bg-destructive/10 border border-destructive/30 rounded-lg p-2">{err}</div>}
+
+        <div>
+          <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1.5">Or paste CSV</div>
+          <textarea rows={6} value={text} onChange={(e) => setText(e.target.value)}
+            className="w-full text-xs num p-3 rounded-lg bg-muted/40 border border-border/60 focus:outline-none focus:ring-2 focus:ring-primary/40 resize-none" />
+        </div>
+
         <div className="flex items-center gap-2">
           <button onClick={parse} className="h-9 px-3 text-xs rounded-lg border border-border/60 hover:bg-muted/40">Parse preview</button>
           {preview.length > 0 && (
@@ -842,6 +915,7 @@ function ImportModal({ onClose }: { onClose: () => void }) {
           <div className="max-h-64 overflow-auto glass rounded-lg">
             <table className="w-full text-xs">
               <thead className="bg-muted/20"><tr>{["Symbol", "Dir", "Qty", "Entry", "Exit"].map(h => <th key={h} className="text-left px-3 py-2 text-[10px] uppercase tracking-widest text-muted-foreground">{h}</th>)}</tr></thead>
+
               <tbody>
                 {preview.map((p, i) => (
                   <tr key={i} className="border-b border-border/40">
@@ -1096,3 +1170,449 @@ function Modal({ title, children, onClose }: { title: string; children: ReactNod
     </div>
   );
 }
+
+// ============================================================================
+// DAILY PLAN (pre-market planning, CueTrade-style)
+// ============================================================================
+function DailyPlanTab() {
+  const plans = usePlans();
+  const rules = useRules();
+  const [date, setDate] = useState(todayKey());
+  const [plan, setPlan] = useState<DailyPlan>(() => getPlan(date));
+
+  useEffect(() => { setPlan(getPlan(date)); }, [date, plans]);
+
+  const set = (p: Partial<DailyPlan>) => setPlan((prev) => ({ ...prev, ...p }));
+  const save = () => savePlan(plan);
+
+  const addPlanned = () => set({
+    plannedTrades: [...plan.plannedTrades, {
+      id: crypto.randomUUID(), symbol: "", strategy: "Custom",
+      direction: "Long", cost_of_trade: 0, max_risk: 0, tags: [],
+    }],
+  });
+  const updPlanned = (id: string, patch: Partial<PlannedTrade>) =>
+    set({ plannedTrades: plan.plannedTrades.map((t) => (t.id === id ? { ...t, ...patch } : t)) });
+  const rmPlanned = (id: string) =>
+    set({ plannedTrades: plan.plannedTrades.filter((t) => t.id !== id) });
+
+  const totalCost = plan.plannedTrades.reduce((s, t) => s + (+t.cost_of_trade || 0), 0);
+  const totalRisk = plan.plannedTrades.reduce((s, t) => s + (+t.max_risk || 0), 0);
+  const savedDates = Object.keys(plans).sort().reverse();
+
+  return (
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-center gap-2 justify-between">
+        <div className="flex items-center gap-2">
+          <input type="date" value={date} onChange={(e) => setDate(e.target.value)}
+            className="h-9 px-3 text-xs rounded-lg bg-muted/40 border border-border/60" />
+          {savedDates.length > 0 && (
+            <select value={date} onChange={(e) => setDate(e.target.value)}
+              className="h-9 px-2 text-xs rounded-lg bg-muted/40 border border-border/60">
+              <option value={todayKey()}>Today</option>
+              {savedDates.filter((d) => d !== todayKey()).map((d) => <option key={d} value={d}>{d}</option>)}
+            </select>
+          )}
+          {plan.savedAt && <span className="text-[10px] text-muted-foreground">Saved {new Date(plan.savedAt).toLocaleString()}</span>}
+        </div>
+        <button onClick={save} className="h-9 px-4 text-xs font-medium rounded-lg bg-primary text-primary-foreground flex items-center gap-1.5">
+          <Save className="h-3.5 w-3.5" /> Save plan
+        </button>
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <KpiCard label="Planned trades" value={plan.plannedTrades.length.toString()} />
+        <KpiCard label="Cost of trades" value={formatINR(totalCost, true)} />
+        <KpiCard label="Max risk" value={formatINR(totalRisk, true)} />
+        <KpiCard label="Rules enabled" value={rules.filter((r) => r.enabled).length.toString()} hint={`of ${rules.length}`} />
+      </div>
+
+      <div className="glass rounded-2xl p-5">
+        <SectionHeader title="Pre-Market Analysis" subtitle="Craft your plan before the open — bias, key levels, catalysts, watchlist" />
+        <textarea rows={6} value={plan.preMarketNotes} onChange={(e) => set({ preMarketNotes: e.target.value })}
+          placeholder={"e.g. Expecting sideways market — Nifty/BankNifty strangles should pay.\nNo plans to exit open FUT positions.\nAdd DB Realty if it reaches 170/175."}
+          className="w-full text-sm p-3 rounded-lg bg-muted/40 border border-border/60 focus:outline-none focus:ring-2 focus:ring-primary/40 resize-none" />
+      </div>
+
+      <div className="glass rounded-2xl p-5">
+        <SectionHeader title="Planned Trades" subtitle="What you intend to trade today"
+          action={<button onClick={addPlanned} className="h-8 px-3 text-xs rounded-lg bg-primary/15 text-primary flex items-center gap-1.5"><Plus className="h-3 w-3" /> Add trade</button>} />
+        {plan.plannedTrades.length === 0 ? (
+          <EmptyState label="No planned trades yet — click Add trade to build today's list." />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead className="bg-muted/20 text-[10px] uppercase tracking-widest text-muted-foreground">
+                <tr>{["Symbol", "Strategy", "Direction", "Cost of Trade", "Max Risk", "Tags", ""].map((h) => <th key={h} className="text-left px-2 py-2">{h}</th>)}</tr>
+              </thead>
+              <tbody>
+                {plan.plannedTrades.map((t) => (
+                  <tr key={t.id} className="border-b border-border/40">
+                    <td className="px-2 py-1.5"><input value={t.symbol} onChange={(e) => updPlanned(t.id, { symbol: e.target.value.toUpperCase() })}
+                      placeholder="RELIANCE" className="w-28 bg-transparent border-b border-border/60 focus:outline-none focus:border-primary py-1" /></td>
+                    <td className="px-2 py-1.5"><input value={t.strategy} onChange={(e) => updPlanned(t.id, { strategy: e.target.value })}
+                      className="w-28 bg-transparent border-b border-border/60 focus:outline-none focus:border-primary py-1" /></td>
+                    <td className="px-2 py-1.5">
+                      <select value={t.direction} onChange={(e) => updPlanned(t.id, { direction: e.target.value as any })}
+                        className="bg-muted/40 rounded px-2 py-1 text-xs">
+                        <option>Long</option><option>Short</option><option>Neutral</option><option>Custom</option>
+                      </select>
+                    </td>
+                    <td className="px-2 py-1.5"><input type="number" value={t.cost_of_trade || ""}
+                      onChange={(e) => updPlanned(t.id, { cost_of_trade: +e.target.value })}
+                      className="w-24 bg-transparent border-b border-border/60 num focus:outline-none focus:border-primary py-1" /></td>
+                    <td className="px-2 py-1.5"><input type="number" value={t.max_risk || ""}
+                      onChange={(e) => updPlanned(t.id, { max_risk: +e.target.value })}
+                      className="w-24 bg-transparent border-b border-border/60 num focus:outline-none focus:border-primary py-1" /></td>
+                    <td className="px-2 py-1.5"><input value={t.tags.join(", ")}
+                      onChange={(e) => updPlanned(t.id, { tags: e.target.value.split(",").map((s) => s.trim()).filter(Boolean) })}
+                      placeholder="momentum, earnings" className="w-40 bg-transparent border-b border-border/60 focus:outline-none focus:border-primary py-1" /></td>
+                    <td className="px-2 py-1.5">
+                      <button onClick={() => rmPlanned(t.id)} className="text-muted-foreground hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      <div className="glass rounded-2xl p-5">
+        <SectionHeader title="Trading Rules Check" subtitle="Confirm you're honoring your rulebook before entering trades" />
+        <div className="space-y-2">
+          {rules.filter((r) => r.enabled).map((r) => {
+            const checked = !!plan.ruleChecks[r.id];
+            return (
+              <label key={r.id} className="flex items-center gap-3 p-2.5 rounded-lg bg-muted/20 border border-border/40 cursor-pointer hover:bg-muted/30">
+                <button type="button" onClick={() => set({ ruleChecks: { ...plan.ruleChecks, [r.id]: !checked } })}>
+                  {checked ? <CheckCircle2 className="h-4 w-4 text-success" /> : <Circle className="h-4 w-4 text-muted-foreground" />}
+                </button>
+                <span className="text-[10px] uppercase tracking-widest text-muted-foreground w-28">{r.category}</span>
+                <span className="text-xs flex-1">{r.rule}{r.target ? <span className="num text-muted-foreground"> — ₹{r.target.toLocaleString("en-IN")}</span> : null}</span>
+              </label>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// POST-MARKET (post-trade review / journal for the day)
+// ============================================================================
+function PostMarketTab({ trades }: { trades: Trade[] }) {
+  const plans = usePlans();
+  const [date, setDate] = useState(todayKey());
+  const [plan, setPlan] = useState<DailyPlan>(() => getPlan(date));
+  useEffect(() => { setPlan(getPlan(date)); }, [date, plans]);
+
+  const dayTrades = useMemo(() => trades.filter((t) => {
+    const anchor = t.exit_time ?? t.entry_time;
+    return anchor.slice(0, 10) === date;
+  }), [trades, date]);
+  const closed = dayTrades.filter((t) => t.status === "closed");
+  const net = closed.reduce((s, t) => s + pnl(t), 0);
+  const wins = closed.filter((t) => pnl(t) > 0).length;
+  const winRate = closed.length ? (wins / closed.length) * 100 : 0;
+
+  const save = () => savePlan(plan);
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between gap-2">
+        <input type="date" value={date} onChange={(e) => setDate(e.target.value)}
+          className="h-9 px-3 text-xs rounded-lg bg-muted/40 border border-border/60" />
+        <button onClick={save} className="h-9 px-4 text-xs font-medium rounded-lg bg-primary text-primary-foreground flex items-center gap-1.5">
+          <Save className="h-3.5 w-3.5" /> Save review
+        </button>
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <KpiCard label="Trades" value={dayTrades.length.toString()} hint={`${closed.length} closed`} />
+        <KpiCard label="Net P&L" value={formatINR(net, true)} accent />
+        <KpiCard label="Win rate" value={`${winRate.toFixed(0)}%`} hint={`${wins} winners`} />
+        <KpiCard label="Planned vs actual" value={`${plan.plannedTrades.length} / ${dayTrades.length}`} />
+      </div>
+
+      <div className="glass rounded-2xl p-5">
+        <SectionHeader title="Pre-Market Notes (for reference)" />
+        <div className="text-xs text-muted-foreground whitespace-pre-wrap leading-relaxed">
+          {plan.preMarketNotes || <span className="italic">No pre-market notes for this day.</span>}
+        </div>
+      </div>
+
+      <div className="glass rounded-2xl p-5">
+        <SectionHeader title="Post-Market Analysis" subtitle="What happened, what worked, what didn't, and one improvement for tomorrow" />
+        <textarea rows={8} value={plan.postMarketNotes} onChange={(e) => setPlan({ ...plan, postMarketNotes: e.target.value })}
+          placeholder={"How did the market behave vs your expectation?\nWhich trades followed the plan? Which didn't?\nOne thing to improve tomorrow…"}
+          className="w-full text-sm p-3 rounded-lg bg-muted/40 border border-border/60 focus:outline-none focus:ring-2 focus:ring-primary/40 resize-none" />
+      </div>
+
+      <div className="glass rounded-2xl p-5">
+        <SectionHeader title="Trades executed today" />
+        {dayTrades.length === 0 ? <EmptyState label="No trades logged for this date." /> : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead className="bg-muted/20 text-[10px] uppercase tracking-widest text-muted-foreground">
+                <tr>{["Symbol", "Dir", "Qty", "Entry", "Exit", "P&L", "Status"].map((h) => <th key={h} className="text-left px-3 py-2">{h}</th>)}</tr>
+              </thead>
+              <tbody>
+                {dayTrades.map((t) => {
+                  const p = pnl(t);
+                  return (
+                    <tr key={t.id} className="border-b border-border/40">
+                      <td className="px-3 py-2 font-medium">{t.symbol}</td>
+                      <td className="px-3 py-2"><DirBadge d={t.direction} /></td>
+                      <td className="px-3 py-2 num">{t.quantity}</td>
+                      <td className="px-3 py-2 num">{formatINR(t.entry_price)}</td>
+                      <td className="px-3 py-2 num">{t.exit_price ? formatINR(t.exit_price) : "—"}</td>
+                      <td className={cn("px-3 py-2 num font-medium", p > 0 ? "text-success" : p < 0 ? "text-destructive" : "")}>
+                        {t.status === "closed" ? formatINR(p, true) : "—"}
+                      </td>
+                      <td className="px-3 py-2 uppercase text-[10px] tracking-widest text-muted-foreground">{t.status}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// TRADING RULES
+// ============================================================================
+function RulesTab() {
+  const rules = useRules();
+  const [newRule, setNewRule] = useState<{ rule: string; category: TradingRule["category"]; target?: number; auto: boolean }>({
+    rule: "", category: "Mindset", auto: false,
+  });
+
+  const add = () => {
+    if (!newRule.rule.trim()) return;
+    upsertRule({
+      id: crypto.randomUUID(), enabled: true,
+      rule: newRule.rule.trim(), category: newRule.category,
+      target: newRule.target, auto: newRule.auto,
+    });
+    setNewRule({ rule: "", category: "Mindset", auto: false });
+  };
+
+  const groups = ["Position Sizing", "Risk", "Entry", "Exit", "Mindset", "Custom"] as const;
+
+  return (
+    <div className="space-y-5">
+      <div className="glass rounded-2xl p-5">
+        <SectionHeader title="Add a rule" subtitle="Manual rules are self-checked each morning; automatic rules can be validated against planned-trade costs and risk." />
+        <div className="grid grid-cols-1 md:grid-cols-[1fr,180px,140px,120px,auto] gap-2">
+          <input value={newRule.rule} onChange={(e) => setNewRule({ ...newRule, rule: e.target.value })}
+            placeholder="e.g. Never risk more than 1% of capital on a single trade"
+            className="h-9 px-3 text-xs rounded-lg bg-muted/40 border border-border/60" />
+          <select value={newRule.category} onChange={(e) => setNewRule({ ...newRule, category: e.target.value as any })}
+            className="h-9 px-2 text-xs rounded-lg bg-muted/40 border border-border/60">
+            {groups.map((g) => <option key={g}>{g}</option>)}
+          </select>
+          <input type="number" value={newRule.target ?? ""} onChange={(e) => setNewRule({ ...newRule, target: e.target.value ? +e.target.value : undefined })}
+            placeholder="Threshold ₹" className="h-9 px-3 text-xs rounded-lg bg-muted/40 border border-border/60 num" />
+          <label className="flex items-center gap-2 text-xs text-muted-foreground">
+            <input type="checkbox" checked={newRule.auto} onChange={(e) => setNewRule({ ...newRule, auto: e.target.checked })} /> Auto
+          </label>
+          <button onClick={add} className="h-9 px-4 text-xs font-medium rounded-lg bg-primary text-primary-foreground">Add</button>
+        </div>
+      </div>
+
+      {groups.map((g) => {
+        const list = rules.filter((r) => r.category === g);
+        if (!list.length) return null;
+        return (
+          <div key={g} className="glass rounded-2xl p-5">
+            <div className="text-[10px] uppercase tracking-widest text-muted-foreground font-semibold mb-3">{g}</div>
+            <div className="space-y-2">
+              {list.map((r) => (
+                <div key={r.id} className="flex items-center gap-3 p-2.5 rounded-lg bg-muted/20 border border-border/40">
+                  <button onClick={() => toggleRule(r.id)}>
+                    {r.enabled ? <CheckCircle2 className="h-4 w-4 text-success" /> : <Circle className="h-4 w-4 text-muted-foreground" />}
+                  </button>
+                  <span className="text-xs flex-1">{r.rule}
+                    {r.target ? <span className="num text-muted-foreground"> — ₹{r.target.toLocaleString("en-IN")}</span> : null}
+                  </span>
+                  <span className={cn("text-[9px] uppercase tracking-widest px-1.5 py-0.5 rounded",
+                    r.auto ? "bg-primary/15 text-primary" : "bg-muted/40 text-muted-foreground")}>{r.auto ? "Auto" : "Manual"}</span>
+                  <button onClick={() => deleteRule(r.id)} className="text-muted-foreground hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></button>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ============================================================================
+// TRADE BUILDER (multi-leg strategy composer with payoff curve)
+// ============================================================================
+function TradeBuilderTab() {
+  const strategies = useStrategies();
+  const [symbol, setSymbol] = useState("NIFTY");
+  const [name, setName] = useState("Bull Call Spread");
+  const [spot, setSpot] = useState(22000);
+  const [legs, setLegs] = useState<OptionLeg[]>([
+    { id: crypto.randomUUID(), action: "Buy", quantity: 50, instrument: "Call", strike: 22000, expiry: "2026-08-28", price: 220 },
+    { id: crypto.randomUUID(), action: "Sell", quantity: 50, instrument: "Call", strike: 22300, expiry: "2026-08-28", price: 90 },
+  ]);
+
+  const addLeg = () => setLegs([...legs, { id: crypto.randomUUID(), action: "Buy", quantity: 50, instrument: "Call", strike: spot, expiry: "", price: 0 }]);
+  const rmLeg = (id: string) => setLegs(legs.filter((l) => l.id !== id));
+  const upd = (id: string, patch: Partial<OptionLeg>) => setLegs(legs.map((l) => (l.id === id ? { ...l, ...patch } : l)));
+
+  const curve = useMemo(() => payoffCurve(legs, spot, 0.15, 61), [legs, spot]);
+  const values = curve.map((c) => c.pnl);
+  const maxP = Math.max(...values, 0);
+  const minP = Math.min(...values, 0);
+  const range = maxP - minP || 1;
+  const width = 600, height = 200;
+  const stepX = width / (curve.length - 1);
+  const y = (v: number) => height - ((v - minP) / range) * height;
+  const zeroY = y(0);
+  const path = curve.map((p, i) => `${i === 0 ? "M" : "L"}${i * stepX},${y(p.pnl)}`).join(" ");
+
+  const breakEvens = curve.filter((c, i) => i > 0 && (curve[i - 1].pnl <= 0) !== (c.pnl <= 0)).map((c) => c.spot);
+  const debit = legs.reduce((s, l) => s + (l.action === "Buy" ? 1 : -1) * l.price * l.quantity, 0);
+  const maxProfit = Math.max(...values);
+  const maxLoss = Math.min(...values);
+
+  const save = () => {
+    if (!symbol || !legs.length) return;
+    addStrategy({ symbol, name, legs, notes: "" });
+  };
+
+  return (
+    <div className="space-y-5">
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr,340px] gap-4">
+        <div className="glass rounded-2xl p-5 space-y-4">
+          <div className="grid grid-cols-3 gap-2">
+            <label className="text-xs">
+              <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1">Symbol</div>
+              <input value={symbol} onChange={(e) => setSymbol(e.target.value.toUpperCase())}
+                className="h-9 w-full px-3 rounded-lg bg-muted/40 border border-border/60" />
+            </label>
+            <label className="text-xs">
+              <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1">Strategy name</div>
+              <input value={name} onChange={(e) => setName(e.target.value)}
+                className="h-9 w-full px-3 rounded-lg bg-muted/40 border border-border/60" />
+            </label>
+            <label className="text-xs">
+              <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1">Spot / anchor</div>
+              <input type="number" value={spot} onChange={(e) => setSpot(+e.target.value)}
+                className="h-9 w-full px-3 rounded-lg bg-muted/40 border border-border/60 num" />
+            </label>
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Legs</div>
+              <button onClick={addLeg} className="h-7 px-2.5 text-[11px] rounded-lg bg-primary/15 text-primary flex items-center gap-1"><Plus className="h-3 w-3" /> Add leg</button>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead className="text-[10px] uppercase tracking-widest text-muted-foreground">
+                  <tr>{["Action", "Qty", "Type", "Strike", "Expiry", "Price", ""].map((h) => <th key={h} className="text-left px-2 py-1">{h}</th>)}</tr>
+                </thead>
+                <tbody>
+                  {legs.map((l) => (
+                    <tr key={l.id} className="border-b border-border/40">
+                      <td className="px-2 py-1.5">
+                        <select value={l.action} onChange={(e) => upd(l.id, { action: e.target.value as any })}
+                          className={cn("bg-muted/40 rounded px-2 py-1", l.action === "Buy" ? "text-success" : "text-destructive")}>
+                          <option>Buy</option><option>Sell</option>
+                        </select>
+                      </td>
+                      <td className="px-2 py-1.5"><input type="number" value={l.quantity} onChange={(e) => upd(l.id, { quantity: +e.target.value })}
+                        className="w-16 bg-transparent border-b border-border/60 num focus:outline-none focus:border-primary py-1" /></td>
+                      <td className="px-2 py-1.5">
+                        <select value={l.instrument} onChange={(e) => upd(l.id, { instrument: e.target.value as any })}
+                          className="bg-muted/40 rounded px-2 py-1">
+                          <option>Stock</option><option>Call</option><option>Put</option>
+                        </select>
+                      </td>
+                      <td className="px-2 py-1.5"><input type="number" value={l.strike ?? ""} disabled={l.instrument === "Stock"}
+                        onChange={(e) => upd(l.id, { strike: +e.target.value })}
+                        className="w-20 bg-transparent border-b border-border/60 num focus:outline-none focus:border-primary py-1 disabled:opacity-40" /></td>
+                      <td className="px-2 py-1.5"><input type="date" value={l.expiry ?? ""} disabled={l.instrument === "Stock"}
+                        onChange={(e) => upd(l.id, { expiry: e.target.value })}
+                        className="bg-transparent border-b border-border/60 focus:outline-none focus:border-primary py-1 disabled:opacity-40" /></td>
+                      <td className="px-2 py-1.5"><input type="number" value={l.price} step="0.05"
+                        onChange={(e) => upd(l.id, { price: +e.target.value })}
+                        className="w-20 bg-transparent border-b border-border/60 num focus:outline-none focus:border-primary py-1" /></td>
+                      <td className="px-2 py-1.5"><button onClick={() => rmLeg(l.id)} className="text-muted-foreground hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></button></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div>
+            <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-2">Payoff at expiration</div>
+            <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-56">
+              <line x1="0" x2={width} y1={zeroY} y2={zeroY} stroke="hsl(var(--border))" strokeDasharray="2 3" />
+              <path d={`${path} L${width},${zeroY} L0,${zeroY} Z`} fill="oklch(0.65 0.15 220 / 0.15)" />
+              <path d={path} stroke="oklch(0.7 0.18 220)" strokeWidth="2" fill="none" />
+              {breakEvens.map((be, i) => {
+                const x = ((be - curve[0].spot) / (curve[curve.length - 1].spot - curve[0].spot)) * width;
+                return <line key={i} x1={x} x2={x} y1="0" y2={height} stroke="oklch(0.75 0.12 60)" strokeDasharray="3 2" opacity="0.6" />;
+              })}
+            </svg>
+            <div className="flex justify-between text-[10px] text-muted-foreground num mt-1">
+              <span>₹{curve[0].spot.toFixed(0)}</span>
+              <span>₹{spot.toFixed(0)}</span>
+              <span>₹{curve[curve.length - 1].spot.toFixed(0)}</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <div className="glass rounded-2xl p-5 space-y-2">
+            <div className="text-[10px] uppercase tracking-widest text-muted-foreground font-semibold mb-1">Analytics</div>
+            <Row k="Net debit / credit" v={<span className={debit >= 0 ? "text-destructive" : "text-success"}>{formatINR(Math.abs(debit), true)} {debit >= 0 ? "Dr" : "Cr"}</span>} />
+            <Row k="Max profit" v={<span className="text-success">{isFinite(maxProfit) ? formatINR(maxProfit, true) : "∞"}</span>} />
+            <Row k="Max loss" v={<span className="text-destructive">{isFinite(maxLoss) ? formatINR(maxLoss, true) : "∞"}</span>} />
+            <Row k="Break-evens" v={breakEvens.length ? breakEvens.map((b) => "₹" + b.toFixed(0)).join(" · ") : "—"} />
+            <Row k="R:R (at spot ±5%)" v={((): string => {
+              const up = payoffAt(legs, spot * 1.05);
+              const down = payoffAt(legs, spot * 0.95);
+              return `${up.toFixed(0)} / ${down.toFixed(0)}`;
+            })()} />
+            <button onClick={save} className="mt-2 w-full h-9 text-xs font-medium rounded-lg bg-primary text-primary-foreground">Save strategy</button>
+          </div>
+
+          <div className="glass rounded-2xl p-5">
+            <div className="text-[10px] uppercase tracking-widest text-muted-foreground font-semibold mb-2">Saved strategies</div>
+            {strategies.length === 0 ? <EmptyState label="No saved strategies yet." /> : (
+              <div className="space-y-2 max-h-72 overflow-y-auto">
+                {strategies.map((s) => (
+                  <div key={s.id} className="p-2.5 rounded-lg bg-muted/20 border border-border/40">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="text-sm font-medium">{s.name}</div>
+                        <div className="text-[10px] text-muted-foreground num">{s.symbol} · {s.legs.length} legs · {new Date(s.createdAt).toLocaleDateString()}</div>
+                      </div>
+                      <button onClick={() => deleteStrategy(s.id)} className="text-muted-foreground hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
