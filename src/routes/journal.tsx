@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState, useEffect, type ReactNode } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { AppShell } from "@/components/app-shell";
 import { cn } from "@/lib/utils";
@@ -6,6 +6,7 @@ import {
   Plus, Upload, Download, Filter as FilterIcon, TrendingUp, TrendingDown,
   X, Target, Shield, Clock, Sparkles, BookOpen, Calendar as CalendarIcon,
   BarChart3, ListChecks, AlertTriangle, Zap, ChevronRight, PieChart, FileText,
+  ClipboardList, Layers, Gavel, Save, Trash2, CheckCircle2, Circle,
 } from "lucide-react";
 import { formatINR, formatPct, Delta, KpiCard, SectionHeader, Sparkline } from "@/lib/ui-helpers";
 import {
@@ -14,6 +15,13 @@ import {
   pnl, unrealized, rMultiple, filterByRange, computeMetrics,
   cumulativeCurve, mistakeStats, parseCsv, groupBy,
 } from "@/lib/journal-store";
+import {
+  type DailyPlan, type PlannedTrade, type TradingRule, type OptionLeg, type BuiltStrategy,
+  usePlans, useRules, useStrategies, getPlan, savePlan,
+  upsertRule, deleteRule, toggleRule, addStrategy, deleteStrategy,
+  payoffAt, payoffCurve, todayKey,
+} from "@/lib/plan-store";
+import * as XLSX from "xlsx";
 
 export const Route = createFileRoute("/journal")({
   component: Journal,
@@ -26,14 +34,19 @@ export const Route = createFileRoute("/journal")({
 });
 
 type TabId =
-  | "overview" | "trades" | "new" | "open" | "calendar"
+  | "overview" | "plan" | "builder" | "postmarket" | "rules"
+  | "trades" | "new" | "open" | "calendar"
   | "strategies" | "playbook" | "reports" | "mistakes" | "ai";
 
 const TABS: { id: TabId; label: string; icon: typeof BarChart3 }[] = [
   { id: "overview", label: "Overview", icon: BarChart3 },
+  { id: "plan", label: "Daily Plan", icon: ClipboardList },
+  { id: "builder", label: "Trade Builder", icon: Layers },
   { id: "trades", label: "Trades", icon: ListChecks },
   { id: "new", label: "New Trade", icon: Plus },
   { id: "open", label: "Open Trades", icon: Zap },
+  { id: "postmarket", label: "Post-Market", icon: BookOpen },
+  { id: "rules", label: "Trading Rules", icon: Gavel },
   { id: "calendar", label: "Calendar", icon: CalendarIcon },
   { id: "strategies", label: "Strategies", icon: Target },
   { id: "playbook", label: "Playbook", icon: BookOpen },
@@ -47,6 +60,7 @@ const RANGES = [
   { id: "month", label: "1M" }, { id: "3m", label: "3M" }, { id: "6m", label: "6M" },
   { id: "ytd", label: "YTD" }, { id: "1y", label: "1Y" }, { id: "all", label: "All" },
 ];
+
 
 function Journal() {
   const trades = useTrades();
