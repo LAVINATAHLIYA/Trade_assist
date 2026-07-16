@@ -118,9 +118,13 @@ function Journal() {
         </div>
 
         {tab === "overview" && <OverviewTab trades={scoped} />}
+        {tab === "plan" && <DailyPlanTab />}
+        {tab === "builder" && <TradeBuilderTab />}
         {tab === "trades" && <TradesTab trades={scoped} onOpen={setDetail} />}
         {tab === "new" && <NewTradeTab onSaved={() => setTab("trades")} />}
         {tab === "open" && <OpenTradesTab trades={trades} onOpen={setDetail} />}
+        {tab === "postmarket" && <PostMarketTab trades={scoped} />}
+        {tab === "rules" && <RulesTab />}
         {tab === "calendar" && <CalendarTab trades={scoped} />}
         {tab === "strategies" && <StrategiesTab trades={scoped} />}
         {tab === "playbook" && <PlaybookTab />}
@@ -134,6 +138,7 @@ function Journal() {
     </AppShell>
   );
 }
+
 
 // ============================================================================
 // OVERVIEW
